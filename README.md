@@ -23,17 +23,19 @@ O projeto roda inteiramente em containers Docker, orquestrados via Docker Compos
 ```mermaid
 graph TD
     subgraph "Camada Física (Simulação)"
-        SIM[Simulator.py / ESP32] -->|POST /measurements| API
+        SIM[Simulator.py / ESP32]
     end
 
     subgraph "Docker Network"
         API[Backend API<br/>FastAPI]
         DB[(PostgreSQL)]
         DASH[Frontend Dashboard<br/>Streamlit]
-        
-        API -->|Lê/Escreve| DB
-        DASH -->|Consome JSON| API
     end
+
+    %% Conexões definidas fora dos subgraphs para não bagunçar o layout
+    SIM -->|POST /measurements| API
+    API -->|Lê/Escreve| DB
+    DASH -->|Consome JSON| API
 
     User((Usuário)) -->|Acessa| DASH
     User -->|Gerencia| API
