@@ -1,0 +1,31 @@
+# --- Python Basics ---
+__pycache__/
+*.py[cod]
+*$py.class
+
+# --- Virtual Environments ---
+.venv/
+venv/
+env/
+ENV/
+
+# --- Environment Variables ---
+.env
+.env.local
+
+# --- Database ---
+*.sqlite3
+*.db
+postgres_data/
+db_data/
+
+# --- IDE Settings ---
+.vscode/
+.idea/
+
+# --- OS Junk ---
+.DS_Store
+Thumbs.db
+
+# --- Docker ---
+docker-logs/

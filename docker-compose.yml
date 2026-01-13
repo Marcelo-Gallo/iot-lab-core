@@ -1,0 +1,45 @@
+services:
+  db:
+    image: postgres:15-alpine
+    restart: always
+    ports:
+      - "5432:5432"
+    env_file:
+      - .env
+    healthcheck:
+      # O comando pg_isready vem nativo na imagem do postgres
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  backend:
+    build: .
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/code
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+    
+  dashboard:
+    build: .  # Usa a mesma imagem Python
+    command: ["streamlit", "run", "app/dashboard/main.py", "--server.port", "8501", "--server.address", "0.0.0.0"]
+    ports:
+      - "8501:8501" # Porta padrão do Streamlit
+    volumes:
+      - .:/code
+    environment:
+      # O Dashboard precisa saber onde a API mora para enviar os dados
+      API_URL: "http://backend:8000/api/v1"
+    depends_on:
+      - backend
+
+volumes:
+  db_data:

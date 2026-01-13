@@ -1,0 +1,12 @@
+from pydantic import BaseModel
+from typing import Optional
+
+# O que o usuário manda para criar
+class SensorTypeCreate(BaseModel):
+    name: str   # Ex: "Temperatura"
+    unit: str   # Ex: "°C"
+    description: Optional[str] = None
+
+# O que a API devolve
+class SensorTypePublic(SensorTypeCreate):
+    id: int
