@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from app.core.socket import manager
 from sqlmodel import Session, select
 from typing import List
 
@@ -9,7 +10,7 @@ from app.schemas.measurement import MeasurementCreate, MeasurementPublic
 router = APIRouter()
 
 @router.post("/", response_model=MeasurementPublic)
-def create_measurement(
+async def create_measurement(
     measurement_in: MeasurementCreate, 
     session: Session = Depends(get_session)
 ):
@@ -22,7 +23,17 @@ def create_measurement(
     session.add(db_measurement)
     session.commit()
     session.refresh(db_measurement)
+
+    payload = {
+        "id": db_measurement.id,
+        "device_id": db_measurement.device_id,
+        "sensor_type_id": db_measurement.sensor_type_id,
+        "value": db_measurement.value,
+        "created_at": db_measurement.created_at.isoformat() # ISO 8601 String
+    }
     
+    await manager.broadcast(payload)
+
     return db_measurement
 
 @router.get("/", response_model=List[MeasurementPublic])
@@ -37,3 +48,20 @@ def read_measurements(
     """
     query = select(Measurement).order_by(Measurement.id.desc()).offset(skip).limit(limit)
     return session.exec(query).all()
+
+@router.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """
+    Canal de comunicação em tempo real.
+    O cliente conecta e fica 'preso' neste loop aguardando mensagens.
+    """
+    await manager.connect(websocket)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+    except Exception as e:
+        print(f"Erro inesperado no Socket: {e}")
+        manager.disconnect(websocket)

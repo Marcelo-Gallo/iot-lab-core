@@ -10,7 +10,7 @@
 
 ## 📖 Sobre o Projeto
 
-Este projeto nasceu da necessidade de criar um backend profissional para protótipos de robótica educacional (como sistemas de irrigação e estações meteorológicas) baseado em minha experiência com pesquisas acadêmicas que utilizavam IoT para captura de dados e automação. O diferencial desta solução, esta na aplicação de uma arquitetura baseada em API RESTful para gerenciar o ciclo de vida de dispositivos (CRUD) e ingerir grandes volumes de dados de sensores.
+Este projeto nasceu da necessidade de criar um backend profissional para protótipos de robótica educacional (como sistemas de irrigação e estações meteorológicas) baseado em minha experiência com pesquisas acadêmicas que utilizavam IoT para captura de dados e automação. O diferencial desta solução esta na aplicação de uma arquitetura baseada em API RESTful para gerenciar o ciclo de vida de dispositivos (CRUD) e ingerir grandes volumes de dados de sensores.
 
 O sistema resolve o problema da **heterogeneidade de sensores** utilizando uma modelagem relacional flexível (Device ↔ Measurement ↔ SensorType).
 
