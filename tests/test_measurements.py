@@ -1,8 +1,7 @@
 from fastapi.testclient import TestClient
 
 def test_create_measurement_end_to_end(client: TestClient):
-    # 1. PREPARAÇÃO (Setup)
-    # Precisamos de um Device e um SensorType antes de medir
+    # PREPARAÇÃO
     
     # Cria Device
     dev_resp = client.post("/api/v1/devices/", json={"name": "D1", "slug": "d1"})
@@ -12,7 +11,6 @@ def test_create_measurement_end_to_end(client: TestClient):
     sens_resp = client.post("/api/v1/sensor-types/", json={"name": "Hum", "unit": "%"})
     sensor_id = sens_resp.json()["id"]
     
-    # 2. AÇÃO (Act)
     # Envia a medição vinculada aos IDs acima
     payload = {
         "device_id": device_id,
@@ -21,7 +19,7 @@ def test_create_measurement_end_to_end(client: TestClient):
     }
     response = client.post("/api/v1/measurements/", json=payload)
     
-    # 3. VERIFICAÇÃO (Assert)
+    # VERIFICAÇÃO
     assert response.status_code == 200
     data = response.json()
     assert data["value"] == 55.5
@@ -31,7 +29,7 @@ def test_create_measurement_end_to_end(client: TestClient):
     assert "created_at" in data
 
 def test_read_measurements_filter(client: TestClient):
-    # Vamos verificar se o filtro de limite funciona
+    # Verifica se o filtro de limite funciona
     # Cria dependências
     dev_id = client.post("/api/v1/devices/", json={"name": "D2", "slug": "d2"}).json()["id"]
     type_id = client.post("/api/v1/sensor-types/", json={"name": "T2", "unit": "K"}).json()["id"]
