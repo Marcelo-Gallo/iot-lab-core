@@ -13,7 +13,7 @@ st.set_page_config(page_title="Laboratório IoT", layout="wide")
 API_URL = "http://backend:8000/api/v1"
 WS_URL = "ws://backend:8000/api/v1/measurements/ws"
 
-# --- GERENCIAMENTO DE ESTADO ---
+# --- 1. GERENCIAMENTO DE ESTADO ---
 if "feedback_msg" not in st.session_state:
     st.session_state["feedback_msg"] = None
 if "feedback_type" not in st.session_state:
@@ -22,12 +22,14 @@ if "editing_id" not in st.session_state:
     st.session_state["editing_id"] = None
 if "data_buffer" not in st.session_state:
     st.session_state.data_buffer = []
+
+# NOVO: Estado para persistir a busca do histórico
 if "historico_data" not in st.session_state:
     st.session_state.historico_data = None
 if "historico_count" not in st.session_state:
     st.session_state.historico_count = 0
 
-# --- FUNÇÕES AUXILIARES ---
+# --- 2. FUNÇÕES AUXILIARES ---
 def carregar_mapa_sensores():
     try:
         response = requests.get(f"{API_URL}/sensor-types/") 
@@ -80,7 +82,7 @@ def deletar_dispositivo(device_id):
         st.session_state["feedback_msg"] = f"Erro: {e}"
         st.session_state["feedback_type"] = "error"
 
-# --- CORE DO WEBSOCKET ---
+# --- 3. CORE DO WEBSOCKET ---
 async def listen_to_ws(kpi_container, chart_container, log_container, history_container):
     try:
         sensor_map = carregar_mapa_sensores()
@@ -229,6 +231,7 @@ elif choice == "Histórico (Análise)":
                         df = pd.DataFrame(processed_data)
                         df['Data/Hora'] = pd.to_datetime(df['Data/Hora'])
                         
+                        # SALVA NO ESTADO (Aqui está a mágica da persistência)
                         st.session_state.historico_data = df
                         st.session_state.historico_count = len(df)
                         st.success(f"Busca realizada! {len(df)} registros encontrados.")
@@ -240,7 +243,7 @@ elif choice == "Histórico (Análise)":
             except Exception as e:
                 st.error(f"Erro: {e}")
 
-    # RENDERIZAÇÃO
+    # RENDERIZAÇÃO (Lê do Session State)
     if st.session_state.historico_data is not None:
         df = st.session_state.historico_data
         count = st.session_state.historico_count
@@ -251,7 +254,7 @@ elif choice == "Histórico (Análise)":
         
         sensores_unicos = df['Sensor'].unique()
         
-        # Cria colunas dinâmicas pra cada sensor
+        # Cria colunas dinâmicas para cada sensor
         cols_stats = st.columns(len(sensores_unicos))
         
         for i, sensor_nome in enumerate(sensores_unicos):
@@ -281,6 +284,7 @@ elif choice == "Histórico (Análise)":
 
         if show_chart:
             with tab_graf:
+                # CORREÇÃO DO ALTAIR: format dentro de axis
                 chart = alt.Chart(df).mark_line(point=True).encode(
                     x=alt.X('Data/Hora', axis=alt.Axis(format='%d/%m %H:%M', title='Tempo')),
                     y=alt.Y('Valor', title='Leitura'),

@@ -42,8 +42,8 @@ def read_measurements(
     session: Session = Depends(get_session),
     skip: int = 0,
     limit: int = 100,
-    start_date: Optional[datetime] = None, 
-    end_date: Optional[datetime] = None   
+    start_date: Optional[datetime] = None, # <--- Novo Parâmetro
+    end_date: Optional[datetime] = None    # <--- Novo Parâmetro
 ):
     """
     Lista medições com filtros opcionais de data.
@@ -59,7 +59,7 @@ def read_measurements(
     if end_date:
         query = query.where(Measurement.created_at <= end_date)
         
-    # Ordenação
+    # Ordenação (mais recentes primeiro faz mais sentido para histórico) e Paginação
     query = query.order_by(Measurement.created_at.desc()).offset(skip).limit(limit)
     
     measurements = session.exec(query).all()

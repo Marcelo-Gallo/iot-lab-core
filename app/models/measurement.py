@@ -8,6 +8,7 @@ class Measurement(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     
     # RELACIONAMENTOS (Foreign Keys)
+    # Garante que serão salvos dados de dispositivos ou tipos que não existem
     device_id: int = Field(foreign_key="devices.id")
     sensor_type_id: int = Field(foreign_key="sensor_types.id")
     

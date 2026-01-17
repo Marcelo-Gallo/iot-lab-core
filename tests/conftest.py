@@ -6,15 +6,16 @@ from sqlmodel.pool import StaticPool
 from app.main import app
 from app.core.database import get_session
 
-# Cria Engine em Memória (SQLite)
+# 1. Cria Engine em Memória (SQLite)
+# StaticPool: Garante que a mesma conexão seja usada (essencial para testes em memória)
 engine_test = create_engine(
     "sqlite://", 
     connect_args={"check_same_thread": False}, 
     poolclass=StaticPool
 )
 
-# Fixture da Sessão
-# Executa antes de cada teste
+# 2. Fixture da Sessão
+# Executa ANTES de cada teste
 @pytest.fixture(name="session")
 def session_fixture():
     # Cria as tabelas vazias
@@ -23,12 +24,14 @@ def session_fixture():
     with Session(engine_test) as session:
         yield session  # Entrega a sessão para o teste usar
     
-    # Limpa tudo depois do teste
+    # Limpa tudo DEPOIS do teste
     SQLModel.metadata.drop_all(engine_test)
 
-# Fixture do Cliente
+# 3. Fixture do Cliente (O "Navegador" do teste)
 @pytest.fixture(name="client")
 def client_fixture(session: Session):
+    # A MÁGICA: Engana o FastAPI. 
+    # Quando ele pedir "get_session", entregamos nossa sessão de teste em memória.
     def get_session_override():
         return session
 

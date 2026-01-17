@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
 def test_create_device(client: TestClient):
-    # Tenta criar um dispositivo válido
+    # 1. Tenta criar um dispositivo válido
     payload = {
         "name": "Arduino Lab 1",
         "slug": "arduino-lab-1",
@@ -18,11 +18,11 @@ def test_create_device(client: TestClient):
     assert "id" in data
 
 def test_create_duplicate_slug_should_fail(client: TestClient):
-    # Cria o primeiro
+    # 1. Cria o primeiro
     payload = {"name": "Device A", "slug": "unique-slug"}
     client.post("/api/v1/devices/", json=payload)
     
-    # Tenta criar o segundo com MESMO slug
+    # 2. Tenta criar o segundo com MESMO slug
     payload_dup = {"name": "Device B", "slug": "unique-slug"}
     response = client.post("/api/v1/devices/", json=payload_dup)
     
@@ -31,11 +31,11 @@ def test_create_duplicate_slug_should_fail(client: TestClient):
     assert "Já existe um dispositivo" in response.json()["detail"]
 
 def test_read_devices(client: TestClient):
-    # Cria dois dispositivos
+    # 1. Cria dois dispositivos
     client.post("/api/v1/devices/", json={"name": "D1", "slug": "d1"})
     client.post("/api/v1/devices/", json={"name": "D2", "slug": "d2"})
     
-    # Busca a lista
+    # 2. Busca a lista
     response = client.get("/api/v1/devices/")
     
     # Validações
