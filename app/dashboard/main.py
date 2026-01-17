@@ -23,18 +23,16 @@ if "editing_id" not in st.session_state:
 if "data_buffer" not in st.session_state:
     st.session_state.data_buffer = []
 
+# NOVO: Estado para persistir a busca do histórico
+if "historico_data" not in st.session_state:
+    st.session_state.historico_data = None
+if "historico_count" not in st.session_state:
+    st.session_state.historico_count = 0
+
 # --- 2. FUNÇÕES AUXILIARES ---
 def carregar_mapa_sensores():
-    """
-    Busca os tipos de sensores no backend e cria um mapa rico.
-    Retorna: {
-        1: {'name': 'Temperatura', 'unit': '°C'}, 
-        2: {'name': 'Umidade', 'unit': '%'}
-    }
-    """
     try:
-        response = requests.get(f"{API_URL}/sensor-types/") # Ajustei rota para plural correto se necessário
-        # Fallback caso a rota seja /sensor_types/ ou /sensor-types/ (verifique no seu backend)
+        response = requests.get(f"{API_URL}/sensor-types/") 
         if response.status_code == 404: 
              response = requests.get(f"{API_URL}/sensor_types/")
 
@@ -46,12 +44,7 @@ def carregar_mapa_sensores():
             }
     except:
         pass
-    
-    # Fallback seguro apenas para não quebrar se API cair
-    return {
-        1: {'name': "Temperatura", 'unit': "°C"}, 
-        2: {'name': "Umidade", 'unit': "%"}
-    }
+    return {1: {'name': "Temperatura", 'unit': "°C"}, 2: {'name': "Umidade", 'unit': "%"}}
 
 def submeter_formulario():
     payload = {
@@ -92,10 +85,9 @@ def deletar_dispositivo(device_id):
 # --- 3. CORE DO WEBSOCKET ---
 async def listen_to_ws(kpi_container, chart_container, log_container, history_container):
     try:
-        # Carrega o mapa rico (Nome + Unidade)
         sensor_map = carregar_mapa_sensores()
         
-        # --- BACKFILL ---
+        # Backfill
         if not st.session_state.data_buffer:
             try:
                 res = requests.get(f"{API_URL}/measurements/?limit=50")
@@ -103,40 +95,30 @@ async def listen_to_ws(kpi_container, chart_container, log_container, history_co
                     history_data = res.json()
                     for data in reversed(history_data):
                         s_id = data['sensor_type_id']
-                        
-                        # Recupera dados do mapa ou usa fallback genérico
                         info = sensor_map.get(s_id, {'name': f"Sensor {s_id}", 'unit': ''})
-                        nome_completo = f"{info['name']}" # Ex: Temperatura
-
                         st.session_state.data_buffer.append({
                             "Hora": datetime.fromisoformat(data["created_at"]).strftime("%H:%M:%S"),
                             "Valor": data["value"],
-                            "Sensor": nome_completo,
+                            "Sensor": info['name'],
                             "Device ID": f"{data['device_id']}",
-                            "Unidade": info['unit'] # Guardamos a unidade para uso futuro se precisar
+                            "Unidade": info['unit']
                         })
             except Exception as e:
                 print(f"Erro no backfill: {e}") 
-        # ----------------
 
         async with websockets.connect(WS_URL) as websocket:
-            latest_values = {} # Guarda último valor {id: valor}
-
+            latest_values = {}
             while True:
                 msg = await websocket.recv()
                 data = json.loads(msg)
-                
                 s_id = data['sensor_type_id']
                 latest_values[s_id] = data['value']
-                
-                # Usa o mesmo mapa para garantir consistência
                 info = sensor_map.get(s_id, {'name': f"Sensor {s_id}", 'unit': ''})
-                nome_completo = f"{info['name']}"
 
                 st.session_state.data_buffer.append({
                     "Hora": datetime.fromisoformat(data["created_at"]).strftime("%H:%M:%S"),
                     "Valor": data["value"],
-                    "Sensor": nome_completo,
+                    "Sensor": info['name'],
                     "Device ID": f"{data['device_id']}",
                     "Unidade": info['unit']
                 })
@@ -146,70 +128,49 @@ async def listen_to_ws(kpi_container, chart_container, log_container, history_co
 
                 df = pd.DataFrame(st.session_state.data_buffer)
                 
-                # --- ATUALIZAÇÃO DOS KPIS (100% AGNÓSTICA) ---
                 with kpi_container.container():
-                    qtd_sensores = len(latest_values)
-                    # Cria colunas dinâmicas (+1 para o Relógio)
-                    cols = st.columns(qtd_sensores + 1)
-                    
-                    # Itera sobre os sensores ativos
+                    qtd = len(latest_values)
+                    cols = st.columns(qtd + 1)
                     for i, (sens_id, valor) in enumerate(latest_values.items()):
-                        # Busca info no mapa (Nome e Unidade)
                         info = sensor_map.get(sens_id, {'name': f"Sensor {sens_id}", 'unit': ''})
-                        
-                        # Renderiza KPI sem IFs mágicos
-                        cols[i].metric(
-                            label=f"📡 {info['name']}", 
-                            value=f"{valor:.1f} {info['unit']}" # Unidade vem do banco!
-                        )
+                        cols[i].metric(label=f"📡 {info['name']}", value=f"{valor:.1f} {info['unit']}")
                     
-                    # Relógio (Sempre na última coluna)
-                    hora_leitura = datetime.fromisoformat(data["created_at"]).strftime("%H:%M:%S")
-                    cols[-1].metric("⏱️ Monitoramento", hora_leitura, delta=f"ID: {data['device_id']}", delta_color="off")
+                    hora = datetime.fromisoformat(data["created_at"]).strftime("%H:%M:%S")
+                    cols[-1].metric("⏱️ Monitoramento", hora, delta=f"ID: {data['device_id']}", delta_color="off")
 
                 with chart_container:
                     st.line_chart(data=df, x="Hora", y="Valor", color="Sensor")
 
                 with history_container:
-                    st.dataframe(df[::-1][["Hora", "Sensor", "Valor", "Device ID"]], 
-                               use_container_width=True, hide_index=True)
-                    
-                with log_container:
-                    with st.expander("Debug: JSON Bruto"):
-                        st.code(msg, language="json")
+                    st.dataframe(df[::-1][["Hora", "Sensor", "Valor", "Device ID"]], use_container_width=True, hide_index=True)
 
     except Exception as e:
         st.error(f"Conexão perdida: {e}")
 
 # ==========================================================
-# NAVEGAÇÃO LATERAL
+# NAVEGAÇÃO
 # ==========================================================
 st.sidebar.title("🔌 IoT Lab Core")
 st.sidebar.markdown("---")
-
 menu_options = ["Monitoramento (Live)", "Histórico (Análise)", "Gerenciamento (CRUD)"]
 choice = st.sidebar.radio("Navegação", menu_options)
-
 st.sidebar.markdown("---")
-st.sidebar.info("Sistema v2.4 | Unit Aware")
+st.sidebar.info("Sistema v2.6 | Session State & Cards")
 
 # ==========================================================
-# PÁGINA 1: MONITORAMENTO (LIVE)
+# MONITORAMENTO
 # ==========================================================
 if choice == "Monitoramento (Live)":
     st.title("⚡ Monitoramento em Tempo Real")
-    st.markdown("Conectado via WebSocket. Visualizando dados recentes (Buffer).")
-    
     kpi_container = st.empty()
     chart_container = st.empty()
     st.write("### 📋 Buffer Recente")
     history_container = st.empty()
     log_container = st.empty()
-    
     asyncio.run(listen_to_ws(kpi_container, chart_container, log_container, history_container))
 
 # ==========================================================
-# PÁGINA 2: HISTÓRICO (ANÁLISE DE DADOS)
+# HISTÓRICO (ANÁLISE)
 # ==========================================================
 elif choice == "Histórico (Análise)":
     st.title("📊 Análise de Dados Históricos")
@@ -227,6 +188,7 @@ elif choice == "Histórico (Análise)":
             st.write("") 
             search_btn = st.button("Buscar Dados 🔎", type="primary", use_container_width=True)
 
+    # LÓGICA DE BUSCA (Salva no Session State)
     if search_btn:
         if len(date_range) == 2:
             start_date, end_date = date_range
@@ -234,14 +196,9 @@ elif choice == "Histórico (Análise)":
             end_dt = datetime.combine(end_date, time.max)
             
             try:
-                # Carrega mapas para enriquecimento
                 sensor_map = carregar_mapa_sensores()
+                params = {"start_date": start_dt.isoformat(), "end_date": end_dt.isoformat(), "limit": limit_val}
                 
-                params = {
-                    "start_date": start_dt.isoformat(),
-                    "end_date": end_dt.isoformat(),
-                    "limit": limit_val
-                }
                 res_measurements = requests.get(f"{API_URL}/measurements/", params=params)
                 res_devices = requests.get(f"{API_URL}/devices/")
                 
@@ -257,109 +214,114 @@ elif choice == "Histórico (Análise)":
                         for item in data:
                             dev_id = item['device_id']
                             s_id = item['sensor_type_id']
-                            
-                            # Recupera Nome e Unidade
                             info = sensor_map.get(s_id, {'name': f"Sensor {s_id}", 'unit': ''})
                             dev_name = device_map_name.get(dev_id, "Desconhecido")
                             
-                            # Legenda com Unidade! Ex: "Estufa 1 (Temperatura - °C)"
-                            legenda_grafico = f"{dev_name} ({info['name']})" 
-
                             processed_data.append({
                                 "Data/Hora": item['created_at'],
                                 "Sensor": info['name'],
-                                "Unidade": info['unit'], # Nova coluna para tabela
+                                "Unidade": info['unit'],
                                 "Valor": item['value'],
                                 "Device ID": dev_id,
                                 "Dispositivo": dev_name,
                                 "Localização": device_map_loc.get(dev_id, "Não definido"),
-                                "Legenda": legenda_grafico
+                                "Legenda": f"{dev_name} ({info['name']})"
                             })
                         
-                        df_hist = pd.DataFrame(processed_data)
-                        df_hist['Data/Hora'] = pd.to_datetime(df_hist['Data/Hora'])
+                        df = pd.DataFrame(processed_data)
+                        df['Data/Hora'] = pd.to_datetime(df['Data/Hora'])
                         
-                        count = len(df_hist)
-
-                        st.divider()
-                        st.write("### 📊 Resumo do Período")
-                        k1, k2, k3, k4 = st.columns(4)
-                        k1.metric("Média Geral", f"{df_hist['Valor'].mean():.2f}")
-                        k2.metric("Pico Máximo", f"{df_hist['Valor'].max():.2f}")
-                        k3.metric("Mínima", f"{df_hist['Valor'].min():.2f}")
-                        k4.metric("Total de Leituras", count)
-                        st.divider()
-                        
-                        LIMITE_GRAFICO = 5000
-                        if count > LIMITE_GRAFICO:
-                            st.warning(f"⚠️ Volume alto de dados ({count}). Gráfico desativado.")
-                            tab_dados = st.container()
-                            show_chart = False
-                        else:
-                            st.success(f"Encontrados {count} registros.")
-                            tab_graf, tab_dados = st.tabs(["📈 Gráfico", "📋 Tabela & Exportação"])
-                            show_chart = True
-
-                        if show_chart:
-                            with tab_graf:
-                                chart = alt.Chart(df_hist).mark_line(point=True).encode(
-                                    x=alt.X('Data/Hora', format='%d/%m %H:%M', title='Tempo'),
-                                    y=alt.Y('Valor', title='Leitura'),
-                                    color=alt.Color('Legenda', legend=alt.Legend(orient='bottom', columns=3, labelLimit=0)),
-                                    # Tooltip agora mostra a unidade correta
-                                    tooltip=['Data/Hora', 'Dispositivo', 'Sensor', 'Valor', 'Unidade']
-                                ).properties(height=400).interactive()
-                                st.altair_chart(chart, use_container_width=True)
-                            
-                        with tab_dados:
-                            # Adicionei a coluna "Unidade" na tabela também
-                            colunas = ["Data/Hora", "Dispositivo", "Sensor", "Valor", "Unidade", "Localização"]
-                            st.dataframe(df_hist[colunas], use_container_width=True)
-                            csv = df_hist.to_csv(index=False).encode('utf-8')
-                            st.download_button("📥 Baixar CSV", csv, "relatorio.csv", "text/csv")
+                        # SALVA NO ESTADO (Aqui está a mágica da persistência)
+                        st.session_state.historico_data = df
+                        st.session_state.historico_count = len(df)
+                        st.success(f"Busca realizada! {len(df)} registros encontrados.")
                     else:
-                        st.warning("Nenhum dado encontrado.")
+                        st.warning("Nenhum dado encontrado neste período.")
+                        st.session_state.historico_data = None
                 else:
                     st.error("Erro na API.")
             except Exception as e:
                 st.error(f"Erro: {e}")
+
+    # RENDERIZAÇÃO (Lê do Session State)
+    if st.session_state.historico_data is not None:
+        df = st.session_state.historico_data
+        count = st.session_state.historico_count
+        
+        # --- CARDS DE ESTATÍSTICA (INSIGHTS AUTOMÁTICOS) ---
+        st.divider()
+        st.write("### 🧠 Insights por Sensor")
+        
+        sensores_unicos = df['Sensor'].unique()
+        
+        # Cria colunas dinâmicas para cada sensor
+        cols_stats = st.columns(len(sensores_unicos))
+        
+        for i, sensor_nome in enumerate(sensores_unicos):
+            df_s = df[df['Sensor'] == sensor_nome]
+            if not df_s.empty:
+                media = df_s["Valor"].mean()
+                max_val = df_s["Valor"].max()
+                min_val = df_s["Valor"].min()
+                unidade = df_s.iloc[0]['Unidade']
+                
+                # Card Estilizado
+                with cols_stats[i]:
+                    st.markdown(f"**📡 {sensor_nome}**")
+                    st.metric("Média", f"{media:.2f} {unidade}")
+                    st.caption(f"Max: {max_val} | Min: {min_val}")
+        st.divider()
+        # ---------------------------------------------------
+
+        LIMITE_GRAFICO = 5000
+        show_chart = True
+        if count > LIMITE_GRAFICO:
+            st.warning(f"⚠️ Volume alto ({count}). Gráfico desativado.")
+            tab_dados = st.container()
+            show_chart = False
         else:
-            st.warning("Selecione data início e fim.")
+            tab_graf, tab_dados = st.tabs(["📈 Gráfico", "📋 Tabela & Exportação"])
+
+        if show_chart:
+            with tab_graf:
+                # CORREÇÃO DO ALTAIR: format dentro de axis
+                chart = alt.Chart(df).mark_line(point=True).encode(
+                    x=alt.X('Data/Hora', axis=alt.Axis(format='%d/%m %H:%M', title='Tempo')),
+                    y=alt.Y('Valor', title='Leitura'),
+                    color=alt.Color('Legenda', legend=alt.Legend(orient='bottom', columns=3, labelLimit=0)),
+                    tooltip=['Data/Hora', 'Dispositivo', 'Sensor', 'Valor', 'Unidade']
+                ).properties(height=400).interactive()
+                st.altair_chart(chart, use_container_width=True)
+        
+        with tab_dados:
+            st.dataframe(df[["Data/Hora", "Dispositivo", "Sensor", "Valor", "Unidade", "Localização"]], use_container_width=True)
+            csv = df.to_csv(index=False).encode('utf-8')
+            st.download_button("📥 Baixar CSV", csv, "relatorio.csv", "text/csv")
 
 # ==========================================================
-# PÁGINA 3: GERENCIAMENTO (CRUD)
+# GERENCIAMENTO (CRUD)
 # ==========================================================
 elif choice == "Gerenciamento (CRUD)":
     st.title("📡 Gerenciamento de Dispositivos")
-
     if st.session_state["feedback_msg"]:
-        if st.session_state["feedback_type"] == "success":
-            st.success(st.session_state["feedback_msg"])
-        elif st.session_state["feedback_type"] == "warning":
-            st.warning(st.session_state["feedback_msg"])
-        else:
-            st.error(st.session_state["feedback_msg"])
+        if st.session_state["feedback_type"] == "success": st.success(st.session_state["feedback_msg"])
+        elif st.session_state["feedback_type"] == "warning": st.warning(st.session_state["feedback_msg"])
+        else: st.error(st.session_state["feedback_msg"])
         st.session_state["feedback_msg"] = None
 
-    with st.form("cadastro_device"):
-        st.write("### Novo Dispositivo")
+    with st.form("cadastro"):
         c1, c2 = st.columns(2)
-        c1.text_input("Nome", key="input_name")
-        c2.text_input("Slug (ID Único)", key="input_slug")
-        st.text_input("Localização", key="input_local")
+        st.session_state.input_name = c1.text_input("Nome")
+        st.session_state.input_slug = c2.text_input("Slug")
+        st.session_state.input_local = st.text_input("Local")
         st.form_submit_button("Cadastrar", on_click=submeter_formulario)
 
     st.divider()
-    st.subheader("Dispositivos Ativos")
     
-    def carregar_dispositivos():
-        try:
-            res = requests.get(f"{API_URL}/devices/")
-            if res.status_code == 200: return res.json()
-        except: pass
-        return []
-
-    devices = carregar_dispositivos()
+    try:
+        res = requests.get(f"{API_URL}/devices/")
+        devices = res.json() if res.status_code == 200 else []
+    except: devices = []
     
     if devices:
         cols = st.columns([0.5, 2, 2, 2, 1, 1.5])
@@ -370,35 +332,21 @@ elif choice == "Gerenciamento (CRUD)":
         cols[4].write("**Status**")
         cols[5].write("**Ações**")
         st.write("---")
-
-        for device in devices:
-            if st.session_state["editing_id"] == device["id"]:
-                with st.container():
-                    with st.form(key=f"edit_{device['id']}"):
-                        col_edit = st.columns(3)
-                        n_name = col_edit[0].text_input("Nome", device["name"])
-                        n_slug = col_edit[1].text_input("Slug", device["slug"])
-                        n_loc = col_edit[2].text_input("Local", device["location"] or "")
-                        if st.form_submit_button("💾 Salvar"):
-                            requests.patch(f"{API_URL}/devices/{device['id']}", 
-                                         json={"name": n_name, "slug": n_slug, "location": n_loc})
-                            st.session_state["editing_id"] = None
-                            st.session_state["feedback_msg"] = "Editado!"
-                            st.session_state["feedback_type"] = "success"
-                            st.rerun()
+        for d in devices:
+            if st.session_state["editing_id"] == d["id"]:
+                with st.form(f"edt_{d['id']}"):
+                    c = st.columns(3)
+                    nn = c[0].text_input("Nome", d["name"])
+                    ns = c[1].text_input("Slug", d["slug"])
+                    nl = c[2].text_input("Local", d["location"])
+                    if st.form_submit_button("Salvar"):
+                        requests.patch(f"{API_URL}/devices/{d['id']}", json={"name": nn, "slug": ns, "location": nl})
+                        st.session_state["editing_id"] = None; st.rerun()
             else:
                 c = st.columns([0.5, 2, 2, 2, 1, 1.5])
-                c[0].write(device['id'])
-                c[1].write(device['name'])
-                c[2].code(device['slug'])
-                c[3].write(device['location'])
-                c[4].write("✅")
+                c[0].write(d['id']); c[1].write(d['name']); c[2].code(d['slug']); c[3].write(d['location'])
+                c[4].write("🟢" if d.get('is_active') else "🔴")
                 b1, b2 = c[5].columns(2)
-                if b1.button("✏️", key=f"e_{device['id']}"):
-                    st.session_state["editing_id"] = device["id"]
-                    st.rerun()
-                if b2.button("🗑️", key=f"d_{device['id']}"):
-                    deletar_dispositivo(device['id'])
-                    st.rerun()
-    else:
-        st.info("Nenhum dispositivo encontrado.")
+                if b1.button("✏️", key=f"e_{d['id']}"): st.session_state["editing_id"] = d["id"]; st.rerun()
+                if b2.button("🗑️", key=f"d_{d['id']}"): deletar_dispositivo(d['id']); st.rerun()
+    else: st.info("Nenhum dispositivo.")
