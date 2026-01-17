@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from app.core.socket import manager
 from sqlmodel import Session, select
-from typing import List
+from typing import List, Optional
+from datetime import datetime
 
 from app.core.database import get_session
 from app.models.measurement import Measurement
@@ -36,18 +37,33 @@ async def create_measurement(
 
     return db_measurement
 
-@router.get("/", response_model=List[MeasurementPublic])
+@router.get("/", response_model=list[MeasurementPublic])
 def read_measurements(
-    skip: int = 0, 
-    limit: int = 100, 
-    session: Session = Depends(get_session)
+    session: Session = Depends(get_session),
+    skip: int = 0,
+    limit: int = 100,
+    start_date: Optional[datetime] = None, # <--- Novo Parâmetro
+    end_date: Optional[datetime] = None    # <--- Novo Parâmetro
 ):
     """
-    Lista as últimas medições registradas.
-    Order by desc(id) para ver as mais recentes primeiro.
+    Lista medições com filtros opcionais de data.
     """
-    query = select(Measurement).order_by(Measurement.id.desc()).offset(skip).limit(limit)
-    return session.exec(query).all()
+    # Inicia a query base
+    query = select(Measurement)
+    
+    # Aplica filtro de Data Início (se informado)
+    if start_date:
+        query = query.where(Measurement.created_at >= start_date)
+    
+    # Aplica filtro de Data Fim (se informado)
+    if end_date:
+        query = query.where(Measurement.created_at <= end_date)
+        
+    # Ordenação (mais recentes primeiro faz mais sentido para histórico) e Paginação
+    query = query.order_by(Measurement.created_at.desc()).offset(skip).limit(limit)
+    
+    measurements = session.exec(query).all()
+    return measurements
 
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
