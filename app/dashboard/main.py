@@ -4,44 +4,46 @@ import pandas as pd
 import asyncio
 import websockets
 import json
-from datetime import datetime, time, date
 import altair as alt
+import pytz 
+from datetime import datetime
 
 # --- CONFIGURAÇÕES GERAIS ---
 st.set_page_config(page_title="Laboratório IoT", layout="wide") 
 
 API_URL = "http://backend:8000/api/v1"
 WS_URL = "ws://backend:8000/api/v1/measurements/ws"
+FUSO_BR = pytz.timezone("America/Sao_Paulo")
 
-# --- GERENCIAMENTO DE ESTADO ---
-if "feedback_msg" not in st.session_state:
-    st.session_state["feedback_msg"] = None
-if "feedback_type" not in st.session_state:
-    st.session_state["feedback_type"] = None
-if "editing_id" not in st.session_state:
-    st.session_state["editing_id"] = None
-if "data_buffer" not in st.session_state:
-    st.session_state.data_buffer = []
-if "historico_data" not in st.session_state:
-    st.session_state.historico_data = None
-if "historico_count" not in st.session_state:
-    st.session_state.historico_count = 0
+# --- ESTADOS ---
+if "feedback_msg" not in st.session_state: st.session_state["feedback_msg"] = None
+if "feedback_type" not in st.session_state: st.session_state["feedback_type"] = None
+if "editing_id" not in st.session_state: st.session_state["editing_id"] = None
+if "data_buffer" not in st.session_state: st.session_state.data_buffer = []
 
 # --- FUNÇÕES AUXILIARES ---
-def carregar_mapa_sensores():
-    try:
-        response = requests.get(f"{API_URL}/sensor-types/") 
-        if response.status_code == 404: 
-             response = requests.get(f"{API_URL}/sensor_types/")
+def converter_para_local(iso_str):
+    if not iso_str: return None
+    dt_utc = datetime.fromisoformat(iso_str).replace(tzinfo=pytz.UTC)
+    return dt_utc.astimezone(FUSO_BR)
 
+def carregar_mapa_sensores():
+    """
+    Retorna dicionário rico: {id: {'name': 'Temperatura', 'unit': '°C'}}
+    Busca direto do banco, eliminando hardcoding.
+    """
+    try:
+        response = requests.get(f"{API_URL}/sensor-types/")
         if response.status_code == 200:
             tipos = response.json()
+            # Mapeia ID -> Objeto com Nome e Unidade
             return {
                 t['id']: {'name': t['name'], 'unit': t['unit']} 
                 for t in tipos
             }
     except:
         pass
+    # Fallback 
     return {1: {'name': "Temperatura", 'unit': "°C"}, 2: {'name': "Umidade", 'unit': "%"}}
 
 def submeter_formulario():
@@ -49,38 +51,30 @@ def submeter_formulario():
         "name": st.session_state.input_name,
         "slug": st.session_state.input_slug,
         "location": st.session_state.input_local,
-        "is_active": True
     }
     try:
         response = requests.post(f"{API_URL}/devices/", json=payload)
         if response.status_code == 200:
             st.session_state["feedback_msg"] = f"Dispositivo '{payload['name']}' cadastrado!"
             st.session_state["feedback_type"] = "success"
-            st.session_state.input_name = ""
-            st.session_state.input_slug = ""
-            st.session_state.input_local = ""
+            st.session_state.input_name = ""; st.session_state.input_slug = ""; st.session_state.input_local = ""
         else:
             err = response.json().get('detail', 'Erro')
-            st.session_state["feedback_msg"] = f"Erro: {err}"
-            st.session_state["feedback_type"] = "error"
+            st.session_state["feedback_msg"] = f"Erro: {err}"; st.session_state["feedback_type"] = "error"
     except Exception as e:
-        st.session_state["feedback_msg"] = f"Erro Conexão: {e}"
-        st.session_state["feedback_type"] = "error"
+        st.session_state["feedback_msg"] = f"Erro Conexão: {e}"; st.session_state["feedback_type"] = "error"
 
 def deletar_dispositivo(device_id):
     try:
         response = requests.delete(f"{API_URL}/devices/{device_id}")
         if response.status_code == 200:
-            st.session_state["feedback_msg"] = "Dispositivo arquivado."
-            st.session_state["feedback_type"] = "warning"
+            st.session_state["feedback_msg"] = "Dispositivo arquivado."; st.session_state["feedback_type"] = "warning"
         else:
-            st.session_state["feedback_msg"] = f"Erro: {response.text}"
-            st.session_state["feedback_type"] = "error"
+            st.session_state["feedback_msg"] = f"Erro: {response.text}"; st.session_state["feedback_type"] = "error"
     except Exception as e:
-        st.session_state["feedback_msg"] = f"Erro: {e}"
-        st.session_state["feedback_type"] = "error"
+        st.session_state["feedback_msg"] = f"Erro: {e}"; st.session_state["feedback_type"] = "error"
 
-# --- CORE DO WEBSOCKET ---
+# --- WEBSOCKET ---
 async def listen_to_ws(kpi_container, chart_container, log_container, history_container):
     try:
         sensor_map = carregar_mapa_sensores()
@@ -93,28 +87,34 @@ async def listen_to_ws(kpi_container, chart_container, log_container, history_co
                     history_data = res.json()
                     for data in reversed(history_data):
                         s_id = data['sensor_type_id']
+                        # Usa o mapa rico ou default
                         info = sensor_map.get(s_id, {'name': f"Sensor {s_id}", 'unit': ''})
+                        
+                        dt_local = converter_para_local(data["created_at"])
                         st.session_state.data_buffer.append({
-                            "Hora": datetime.fromisoformat(data["created_at"]).strftime("%H:%M:%S"),
+                            "Hora": dt_local.strftime("%H:%M:%S"),
                             "Valor": data["value"],
                             "Sensor": info['name'],
                             "Device ID": f"{data['device_id']}",
                             "Unidade": info['unit']
                         })
             except Exception as e:
-                print(f"Erro no backfill: {e}") 
+                print(f"Erro backfill: {e}")
 
         async with websockets.connect(WS_URL) as websocket:
             latest_values = {}
             while True:
                 msg = await websocket.recv()
                 data = json.loads(msg)
+                
                 s_id = data['sensor_type_id']
                 latest_values[s_id] = data['value']
+                
                 info = sensor_map.get(s_id, {'name': f"Sensor {s_id}", 'unit': ''})
+                dt_local = converter_para_local(data["created_at"])
 
                 st.session_state.data_buffer.append({
-                    "Hora": datetime.fromisoformat(data["created_at"]).strftime("%H:%M:%S"),
+                    "Hora": dt_local.strftime("%H:%M:%S"),
                     "Valor": data["value"],
                     "Sensor": info['name'],
                     "Device ID": f"{data['device_id']}",
@@ -133,8 +133,7 @@ async def listen_to_ws(kpi_container, chart_container, log_container, history_co
                         info = sensor_map.get(sens_id, {'name': f"Sensor {sens_id}", 'unit': ''})
                         cols[i].metric(label=f"📡 {info['name']}", value=f"{valor:.1f} {info['unit']}")
                     
-                    hora = datetime.fromisoformat(data["created_at"]).strftime("%H:%M:%S")
-                    cols[-1].metric("⏱️ Monitoramento", hora, delta=f"ID: {data['device_id']}", delta_color="off")
+                    cols[-1].metric("⏱️ Monitoramento", dt_local.strftime("%H:%M:%S"), delta=f"ID: {data['device_id']}", delta_color="off")
 
                 with chart_container:
                     st.line_chart(data=df, x="Hora", y="Valor", color="Sensor")
@@ -146,156 +145,132 @@ async def listen_to_ws(kpi_container, chart_container, log_container, history_co
         st.error(f"Conexão perdida: {e}")
 
 # ==========================================================
-# NAVEGAÇÃO
+# UI PRINCIPAL
 # ==========================================================
 st.sidebar.title("🔌 IoT Lab Core")
 st.sidebar.markdown("---")
-menu_options = ["Monitoramento (Live)", "Histórico (Análise)", "Gerenciamento (CRUD)"]
+menu_options = ["Monitoramento (Live)", "Histórico (Analytics)", "Gerenciamento (CRUD)"]
 choice = st.sidebar.radio("Navegação", menu_options)
 st.sidebar.markdown("---")
-st.sidebar.info("Sistema v2.6 | Session State & Cards")
+st.sidebar.info("Sistema v3.1 | Dynamic Units & KPI Fix")
 
-# ==========================================================
-# MONITORAMENTO
-# ==========================================================
 if choice == "Monitoramento (Live)":
     st.title("⚡ Monitoramento em Tempo Real")
     kpi_container = st.empty()
     chart_container = st.empty()
     st.write("### 📋 Buffer Recente")
     history_container = st.empty()
-    log_container = st.empty()
-    asyncio.run(listen_to_ws(kpi_container, chart_container, log_container, history_container))
+    asyncio.run(listen_to_ws(kpi_container, chart_container, st.empty(), history_container))
 
-# ==========================================================
-# HISTÓRICO (ANÁLISE)
-# ==========================================================
-elif choice == "Histórico (Análise)":
-    st.title("📊 Análise de Dados Históricos")
-    st.markdown("Consulte o banco de dados completo e exporte para CSV.")
-
-    with st.expander("🔎 Filtros de Pesquisa", expanded=True):
-        c1, c2, c3 = st.columns([2, 1, 1])
+elif choice == "Histórico (Analytics)":
+    st.title("📊 Análise Inteligente de Dados")
+    
+    with st.expander("⚙️ Configuração", expanded=True):
+        c1, c2, c3 = st.columns([2, 2, 1])
         with c1:
-            today = date.today()
-            date_range = st.date_input("Selecione o Período", (today, today))
+            periodo = st.selectbox("Janela", ["1h", "1d", "1w", "1m"], format_func=lambda x: {"1h":"1 Hora", "1d":"24 Horas", "1w":"1 Semana", "1m":"1 Mês"}[x])
         with c2:
-            limit_val = st.number_input("Limite de Registros", min_value=100, value=1000, step=100)
+            default_idx = 0 if periodo == '1h' else 1 if periodo == '1d' else 2
+            bucket = st.selectbox("Resolução", ["minute", "hour", "day"], index=default_idx, format_func=lambda x: {"minute":"Minuto", "hour":"Hora", "day":"Dia"}[x])
         with c3:
-            st.write("") 
-            st.write("") 
-            search_btn = st.button("Buscar Dados 🔎", type="primary", use_container_width=True)
+            st.write(""); st.write("")
+            btn_update = st.button("🔄 Analisar", type="primary", use_container_width=True)
 
-    # LÓGICA DE BUSCA (Salva no Session State)
-    if search_btn:
-        if len(date_range) == 2:
-            start_date, end_date = date_range
-            start_dt = datetime.combine(start_date, time.min)
-            end_dt = datetime.combine(end_date, time.max)
+    if btn_update:
+        try:
+            sensor_map = carregar_mapa_sensores()
+            params = {"period": periodo, "bucket_size": bucket}
+            res = requests.get(f"{API_URL}/measurements/analytics/", params=params)
             
-            try:
-                sensor_map = carregar_mapa_sensores()
-                params = {"start_date": start_dt.isoformat(), "end_date": end_dt.isoformat(), "limit": limit_val}
-                
-                res_measurements = requests.get(f"{API_URL}/measurements/", params=params)
-                res_devices = requests.get(f"{API_URL}/devices/")
-                
-                if res_measurements.status_code == 200 and res_devices.status_code == 200:
-                    data = res_measurements.json()
-                    devices_list = res_devices.json()
-                    
-                    device_map_name = {d['id']: d['name'] for d in devices_list}
-                    device_map_loc = {d['id']: d['location'] for d in devices_list}
-
-                    if data:
-                        processed_data = []
-                        for item in data:
-                            dev_id = item['device_id']
-                            s_id = item['sensor_type_id']
-                            info = sensor_map.get(s_id, {'name': f"Sensor {s_id}", 'unit': ''})
-                            dev_name = device_map_name.get(dev_id, "Desconhecido")
-                            
-                            processed_data.append({
-                                "Data/Hora": item['created_at'],
-                                "Sensor": info['name'],
-                                "Unidade": info['unit'],
-                                "Valor": item['value'],
-                                "Device ID": dev_id,
-                                "Dispositivo": dev_name,
-                                "Localização": device_map_loc.get(dev_id, "Não definido"),
-                                "Legenda": f"{dev_name} ({info['name']})"
-                            })
-                        
-                        df = pd.DataFrame(processed_data)
-                        df['Data/Hora'] = pd.to_datetime(df['Data/Hora'])
-                        
-                        st.session_state.historico_data = df
-                        st.session_state.historico_count = len(df)
-                        st.success(f"Busca realizada! {len(df)} registros encontrados.")
-                    else:
-                        st.warning("Nenhum dado encontrado neste período.")
-                        st.session_state.historico_data = None
+            if res.status_code == 200:
+                data = res.json()
+                if not data:
+                    st.warning("Sem dados.")
                 else:
-                    st.error("Erro na API.")
-            except Exception as e:
-                st.error(f"Erro: {e}")
+                    rows = []
+                    for item in data:
+                        s_id = item['sensor_type_id']
+                        info = sensor_map.get(s_id, {'name': f"Sensor {s_id}", 'unit': ''})
+                        dt_local = converter_para_local(item['bucket'])
+                        
+                        rows.append({
+                            "Data": dt_local,
+                            "Sensor": info['name'],
+                            "Unidade": info['unit'],
+                            "Média": item['avg_value'],
+                            "Mínima": item['min_value'],
+                            "Máxima": item['max_value'],
+                            "Amostras": item['count']
+                        })
+                    
+                    df = pd.DataFrame(rows)
+                    
+                    st.divider()
+                    st.write("### 🧠 Insights por Sensor")
+                    
+                    sensores_unicos = df['Sensor'].unique()
+                    
+                    cols_stats = st.columns(len(sensores_unicos))
+                    
+                    for i, sensor_nome in enumerate(sensores_unicos):
+                        df_s = df[df['Sensor'] == sensor_nome]
+                        
+                        media_periodo = df_s['Média'].mean()
+                        max_periodo = df_s['Máxima'].max()
+                        min_periodo = df_s['Mínima'].min()
+                        unidade_s = df_s.iloc[0]['Unidade']
+                        
+                        with cols_stats[i]:
+                            st.markdown(f"**📡 {sensor_nome}**")
+                            st.metric("Média", f"{media_periodo:.2f} {unidade_s}")
+                            st.caption(f"Max: {max_periodo} | Min: {min_periodo}")
+                            
+                    st.divider()
 
-    # RENDERIZAÇÃO
-    if st.session_state.historico_data is not None:
-        df = st.session_state.historico_data
-        count = st.session_state.historico_count
-        
-        # --- CARDS DE ESTATÍSTICA (INSIGHTS AUTOMÁTICOS) ---
-        st.divider()
-        st.write("### 🧠 Insights por Sensor")
-        
-        sensores_unicos = df['Sensor'].unique()
-        
-        # Cria colunas dinâmicas pra cada sensor
-        cols_stats = st.columns(len(sensores_unicos))
-        
-        for i, sensor_nome in enumerate(sensores_unicos):
-            df_s = df[df['Sensor'] == sensor_nome]
-            if not df_s.empty:
-                media = df_s["Valor"].mean()
-                max_val = df_s["Valor"].max()
-                min_val = df_s["Valor"].min()
-                unidade = df_s.iloc[0]['Unidade']
-                
-                # Card Estilizado
-                with cols_stats[i]:
-                    st.markdown(f"**📡 {sensor_nome}**")
-                    st.metric("Média", f"{media:.2f} {unidade}")
-                    st.caption(f"Max: {max_val} | Min: {min_val}")
-        st.divider()
-        # ---------------------------------------------------
+                    # --- GRÁFICO COM PICOS ---
+                    tab1, tab2 = st.tabs(["📈 Tendência", "📋 Dados Brutos"])
+                    with tab1:
+                        # Base do gráfico
+                        base = alt.Chart(df).encode(x=alt.X('Data', title='Tempo (BRT)', axis=alt.Axis(format='%H:%M')))
 
-        LIMITE_GRAFICO = 5000
-        show_chart = True
-        if count > LIMITE_GRAFICO:
-            st.warning(f"⚠️ Volume alto ({count}). Gráfico desativado.")
-            tab_dados = st.container()
-            show_chart = False
-        else:
-            tab_graf, tab_dados = st.tabs(["📈 Gráfico", "📋 Tabela & Exportação"])
+                        # Linha da Média
+                        line = base.mark_line().encode(
+                            y=alt.Y('Média', title='Valor'),
+                            color='Sensor',
+                            tooltip=['Data', 'Sensor', 'Média', 'Unidade']
+                        )
+                        
+                        # Sombra (Min-Max)
+                        band = base.mark_area(opacity=0.3).encode(
+                            y='Mínima',
+                            y2='Máxima',
+                            color='Sensor'
+                        )
+                        
+                        # Pontos de Máxima (Destaque visual)
+                        points_max = base.mark_point(color='red', size=50, shape='triangle-up').encode(
+                            y='Máxima',
+                            color='Sensor',
+                            tooltip=['Data', 'Sensor', 'Máxima']
+                        )
+                        
+                        # Pontos de Mínima
+                        points_min = base.mark_point(color='blue', size=50, shape='triangle-down').encode(
+                            y='Mínima',
+                            color='Sensor',
+                            tooltip=['Data', 'Sensor', 'Mínima']
+                        )
 
-        if show_chart:
-            with tab_graf:
-                chart = alt.Chart(df).mark_line(point=True).encode(
-                    x=alt.X('Data/Hora', axis=alt.Axis(format='%d/%m %H:%M', title='Tempo')),
-                    y=alt.Y('Valor', title='Leitura'),
-                    color=alt.Color('Legenda', legend=alt.Legend(orient='bottom', columns=3, labelLimit=0)),
-                    tooltip=['Data/Hora', 'Dispositivo', 'Sensor', 'Valor', 'Unidade']
-                ).properties(height=400).interactive()
-                st.altair_chart(chart, use_container_width=True)
-        
-        with tab_dados:
-            st.dataframe(df[["Data/Hora", "Dispositivo", "Sensor", "Valor", "Unidade", "Localização"]], use_container_width=True)
-            csv = df.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Baixar CSV", csv, "relatorio.csv", "text/csv")
+                        st.altair_chart((band + line + points_max + points_min).interactive(), use_container_width=True)
 
+                    with tab2:
+                        st.dataframe(df, use_container_width=True)
+            else:
+                st.error(f"Erro API: {res.text}")
+        except Exception as e:
+            st.error(f"Erro: {e}")
 # ==========================================================
-# GERENCIAMENTO (CRUD)
+# 3. GERENCIAMENTO (CRUD)
 # ==========================================================
 elif choice == "Gerenciamento (CRUD)":
     st.title("📡 Gerenciamento de Dispositivos")
@@ -305,11 +280,15 @@ elif choice == "Gerenciamento (CRUD)":
         else: st.error(st.session_state["feedback_msg"])
         st.session_state["feedback_msg"] = None
 
-    with st.form("cadastro"):
+    with st.form("cadastro_device"):
+        st.write("### Novo Dispositivo")
         c1, c2 = st.columns(2)
-        st.session_state.input_name = c1.text_input("Nome")
-        st.session_state.input_slug = c2.text_input("Slug")
-        st.session_state.input_local = st.text_input("Local")
+        st.session_state.input_name = c1.text_input("Nome", placeholder="Ex: Arduino Bancada 1")
+        st.session_state.input_slug = c2.text_input("Slug", placeholder="Ex: arduino-bancada-1")
+        
+        c3, c4 = st.columns(2)
+        st.session_state.input_local = c3.text_input("Local", placeholder="Ex: Laboratório")
+        
         st.form_submit_button("Cadastrar", on_click=submeter_formulario)
 
     st.divider()
