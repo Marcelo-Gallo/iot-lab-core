@@ -1,86 +1,83 @@
-from typing import List
 from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel import Session, select
+from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
+from typing import List
 from sqlalchemy import desc
+
 from app.core.database import get_session
 from app.models.device import Device
-from app.schemas.device import DeviceCreate, DevicePublic
 from app.schemas.device import DeviceCreate, DevicePublic, DeviceUpdate
-from datetime import datetime
 
 router = APIRouter()
 
-@router.get("/", response_model=List[DevicePublic])
-def read_devices(
-    skip: int = 0, 
-    limit: int = 100, 
-    session: Session = Depends(get_session)
-):
-    """
-    Lista todos os dispositivos cadastrados.
-    """
-    devices = session.exec(select(Device).order_by(Device.id.desc()).offset(skip).limit(limit)).all()
-    return devices
-
 @router.post("/", response_model=DevicePublic)
-def create_device(device_in: DeviceCreate, session: Session = Depends(get_session)):
-    """
-    Cadastra um novo dispositivo.
-    """
-    query = select(Device).where(Device.slug == device_in.slug)
-    existing_device = session.exec(query).first()
+async def create_device(
+    device: DeviceCreate, 
+    session: AsyncSession = Depends(get_session)
+):
+    # Verifica unicidade do slug
+    query = select(Device).where(Device.slug == device.slug)
+    result = await session.exec(query)
+    existing_device = result.first()
     
     if existing_device:
         raise HTTPException(status_code=400, detail="Já existe um dispositivo com este slug.")
-    db_device = Device.model_validate(device_in)
-    
-    # Grava no Banco
+
+    db_device = Device.model_validate(device)
     session.add(db_device)
-    session.commit()      # Efetiva a gravação
-    session.refresh(db_device) # Atualiza o objeto com o ID gerado pelo banco
-    
+    await session.commit()
+    await session.refresh(db_device)
     return db_device
 
 @router.get("/", response_model=List[DevicePublic])
-def read_devices(
-    skip: int = 0, 
-    limit: int = 100, 
-    session: Session = Depends(get_session)
+async def read_devices(
+    session: AsyncSession = Depends(get_session),
+    skip: int = 0,
+    limit: int = 100,
 ):
-    query = select(Device).where(Device.deleted_at == None).offset(skip).limit(limit)
-    devices = session.exec(query).all()
-    return devices
+    # Ordenação LIFO (Last In, First Out)
+    query = select(Device).order_by(Device.id.desc()).offset(skip).limit(limit)
+    result = await session.exec(query)
+    return result.all()
+
+@router.get("/{device_id}", response_model=DevicePublic)
+async def read_device(
+    device_id: int, 
+    session: AsyncSession = Depends(get_session)
+):
+    db_device = await session.get(Device, device_id)
+    if not db_device:
+        raise HTTPException(status_code=404, detail="Dispositivo não encontrado")
+    return db_device
 
 @router.patch("/{device_id}", response_model=DevicePublic)
-def update_device(
+async def update_device(
     device_id: int, 
-    device_update: DeviceUpdate, 
-    session: Session = Depends(get_session)
+    device_in: DeviceUpdate, 
+    session: AsyncSession = Depends(get_session)
 ):
-    db_device = session.get(Device, device_id)
-    if not db_device or db_device.deleted_at:
+    db_device = await session.get(Device, device_id)
+    if not db_device:
         raise HTTPException(status_code=404, detail="Dispositivo não encontrado")
-
-    update_data = device_update.model_dump(exclude_unset=True)
     
-    for key, value in update_data.items():
+    device_data = device_in.model_dump(exclude_unset=True)
+    for key, value in device_data.items():
         setattr(db_device, key, value)
-
+        
     session.add(db_device)
-    session.commit()
-    session.refresh(db_device)
+    await session.commit()
+    await session.refresh(db_device)
     return db_device
 
 @router.delete("/{device_id}")
-def delete_device(device_id: int, session: Session = Depends(get_session)):
-    db_device = session.get(Device, device_id)
-    if not db_device or db_device.deleted_at:
+async def delete_device(
+    device_id: int, 
+    session: AsyncSession = Depends(get_session)
+):
+    db_device = await session.get(Device, device_id)
+    if not db_device:
         raise HTTPException(status_code=404, detail="Dispositivo não encontrado")
-
-    db_device.deleted_at = datetime.utcnow()
-    db_device.is_active = False
     
-    session.add(db_device)
-    session.commit()
-    
-    return {"ok": True, "message": "Dispositivo arquivado com sucesso"}
+    await session.delete(db_device)
+    await session.commit()
+    return {"ok": True}

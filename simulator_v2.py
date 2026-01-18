@@ -74,26 +74,51 @@ class DeviceBot:
 
 async def setup_world(client: httpx.AsyncClient):
     """
-    Prepara o terreno: descobre tipos de sensores e cria/recupera devices.
+    Prepara o terreno: Garante que existem Tipos de Sensores e Dispositivos.
     """
     logger.info("🌍 Inicializando a Matrix (Setup)...")
     
-    # Buscar Tipos de Sensores
+    # --- 1. GARANTIR TIPOS DE SENSORES (SELF-SEEDING) ---
+    # Define o que o simulador PRECISA para funcionar
+    required_sensors = {
+        "Temperatura": {"name": "Temperatura", "unit": "°C"},
+        "Umidade": {"name": "Umidade", "unit": "%"}
+    }
+    
+    # Busca o que já tem no banco
     try:
         r_types = await client.get(f"{API_URL}/sensor-types/")
-        r_types.raise_for_status()
-        types_list = r_types.json()
-        # Cria mapa: Nome -> ID
-        types_map = {t["name"]: t["id"] for t in types_list}
-        logger.info(f"📋 Tipos de Sensores Encontrados: {types_map}")
+        existing_types = {t["name"]: t["id"] for t in r_types.json()}
     except Exception as e:
-        logger.critical(f"Falha ao buscar tipos de sensores. O servidor está rodando? Erro: {e}")
+        logger.critical(f"Erro ao conectar na API: {e}")
         sys.exit(1)
 
-    bots = []
+    types_map = {}
     
-    # Criar/Recuperar Dispositivos
+    # Lógica de "Upsert" (Se não existe, cria)
+    for key, data in required_sensors.items():
+        if key in existing_types:
+            types_map[key] = existing_types[key]
+            # logger.info(f"✅ Tipo encontrado: {key}")
+        else:
+            # Cria se não existir
+            logger.info(f"🌱 Criando tipo de sensor ausente: {key}...")
+            r_create = await client.post(f"{API_URL}/sensor-types/", json=data)
+            if r_create.status_code == 200:
+                new_id = r_create.json()["id"]
+                types_map[key] = new_id
+                logger.info(f"✨ Tipo criado: {key} (ID: {new_id})")
+            else:
+                logger.error(f"❌ Falha ao criar sensor {key}: {r_create.text}")
+
+    logger.info(f"📋 Mapa de Sensores: {types_map}")
+
+    # --- 2. CRIAR DISPOSITIVOS (Igual ao anterior) ---
+    bots = []
     logger.info(f"🔨 Fabricando {NUM_DEVICES} dispositivos virtuais...")
+    
+    # ... (O resto do código de devices permanece idêntico, pode manter) ...
+    # Vou repetir o bloco for de devices para facilitar o copy-paste seguro
     
     for i in range(1, NUM_DEVICES + 1):
         dev_name = f"Bot Device {i:02d}"
@@ -106,33 +131,19 @@ async def setup_world(client: httpx.AsyncClient):
             "is_active": True
         }
 
-        # Tenta criar
         r_new = await client.post(f"{API_URL}/devices/", json=payload)
         
         if r_new.status_code == 200:
-            # Sucesso: Criou novo
-            data = r_new.json()
-            dev_id = data["id"]
-            logger.info(f"✨ Criado: {dev_name} (ID: {dev_id})")
-        
+            dev_id = r_new.json()["id"]
         elif r_new.status_code == 400:
-            # Erro 400 geralmente é "Slug já existe". Vamos buscar o ID dele.
-            # Nota: Numa API real, teríamos um GET /devices/{slug}, mas vamos listar todos.
-            # Otimização simples: listar todos uma vez fora do loop seria melhor, 
-            # mas para setup inicial isso serve.
+            # Busca ID se já existe
             all_devs = (await client.get(f"{API_URL}/devices/?limit=1000")).json()
             target = next((d for d in all_devs if d["slug"] == dev_slug), None)
-            
-            if target:
-                dev_id = target["id"]
-            else:
-                logger.error(f"💀 Erro: Device {dev_slug} existe mas não foi encontrado na lista.")
-                continue
+            if target: dev_id = target["id"]
+            else: continue
         else:
-            logger.error(f"💀 Erro desconhecido ao criar device: {r_new.text}")
             continue
 
-        # Instancia o Bot
         bot = DeviceBot(dev_id, dev_name, types_map)
         bots.append(bot)
 
