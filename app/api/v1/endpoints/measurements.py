@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, Query
 from app.core.socket import manager
 from sqlmodel import Session, select
 from typing import List, Optional
@@ -37,29 +37,30 @@ async def create_measurement(
 
     return db_measurement
 
-@router.get("/", response_model=list[MeasurementPublic])
+@router.get("/", response_model=List[MeasurementPublic])
 def read_measurements(
     session: Session = Depends(get_session),
     skip: int = 0,
     limit: int = 100,
-    start_date: Optional[datetime] = None, 
-    end_date: Optional[datetime] = None   
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    device_ids: Optional[List[int]] = Query(default=None) # <--- PARÂMETRO NOVO
 ):
     """
-    Lista medições com filtros opcionais de data.
+    Lista medições com filtros opcionais de data e dispositivos.
     """
-    # Inicia a query base
     query = select(Measurement)
     
-    # Aplica filtro de Data Início (se informado)
     if start_date:
         query = query.where(Measurement.created_at >= start_date)
     
-    # Aplica filtro de Data Fim (se informado)
     if end_date:
         query = query.where(Measurement.created_at <= end_date)
+    
+    #  FILTRO DE DISPOSITIVOS
+    if device_ids:
+        query = query.where(Measurement.device_id.in_(device_ids))
         
-    # Ordenação
     query = query.order_by(Measurement.created_at.desc()).offset(skip).limit(limit)
     
     measurements = session.exec(query).all()
