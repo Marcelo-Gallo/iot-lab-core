@@ -28,4 +28,8 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+@app.get("/")
+async def root():
+    return {"status": "ok", "mensagem": "Sistema operando em normalidade"}
+
 app.include_router(api_router, prefix="/api/v1")

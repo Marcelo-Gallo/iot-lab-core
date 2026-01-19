@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 from app.dashboard.utils import API_URL
 
-# --- FUNÇÃO CALLBACK (Executa ANTES de desenhar a tela) ---
+# FUNÇÃO CALLBACK
 def alternar_status_device(device_id, status_atual):
     novo_status = not status_atual
     try:
@@ -21,23 +21,22 @@ def alternar_status_device(device_id, status_atual):
 def render_devices_view():
     st.title("📡 Gerenciamento de Dispositivos")
     
-    # --- 1. GERENCIAMENTO DE ESTADO ---
+    # GERENCIAMENTO DE ESTADO
     if "editing_id" not in st.session_state: st.session_state["editing_id"] = None
     if "configuring_id" not in st.session_state: st.session_state["configuring_id"] = None
     if "feedback_msg" not in st.session_state: st.session_state["feedback_msg"] = None
     if "feedback_type" not in st.session_state: st.session_state["feedback_type"] = None
 
-    # Exibe mensagens de feedback (Toast ou Alert)
+    # Exibe mensagens de feedback
     if st.session_state["feedback_msg"]:
         tipo = st.session_state["feedback_type"]
         msg = st.session_state["feedback_msg"]
         if tipo == "success": st.success(msg)
         elif tipo == "warning": st.warning(msg)
         else: st.error(msg)
-        # Limpa após exibir para não ficar persistente
         st.session_state["feedback_msg"] = None
 
-    # --- 2. CADASTRO ---
+    # CADASTRO
     with st.form("cadastro_device"):
         st.write("### Novo Dispositivo")
         c1, c2 = st.columns(2)
@@ -60,13 +59,11 @@ def render_devices_view():
 
     st.divider()
     
-    # --- 3. LISTAGEM ---
+    # LISTAGEM
     try:
-        # Busca dados (Agora já virão atualizados por causa do Callback)
         res = requests.get(f"{API_URL}/devices/")
         devices = res.json() if res.status_code == 200 else []
         
-        # Busca Tipos de Sensores
         res_types = requests.get(f"{API_URL}/sensor-types/")
         sensor_types = res_types.json() if res_types.status_code == 200 else []
         sensor_options = {s['name']: s['id'] for s in sensor_types}
@@ -88,18 +85,16 @@ def render_devices_view():
 
             for d in devices_filtrados:
                 
-                # --- MODO 1: CONFIGURAÇÃO DE SENSORES (NOVO) ---
+                # Configuração de sensores
                 if st.session_state["configuring_id"] == d["id"]:
                     with st.container(border=True):
                         st.info(f"⚙️ Configurando Sensores: **{d['name']}**")
                         
-                        # 1. Busca sensores atuais deste device
                         try:
                             r_curr = requests.get(f"{API_URL}/devices/{d['id']}/sensors")
                             current_ids = r_curr.json() if r_curr.status_code == 200 else []
                         except: current_ids = []
                         
-                        # Converte IDs para Nomes para o widget
                         default_names = [name for name, sid in sensor_options.items() if sid in current_ids]
                         
                         with st.form(f"config_sensors_{d['id']}"):
@@ -111,7 +106,6 @@ def render_devices_view():
                             
                             c_save, c_canc = st.columns([1, 4])
                             if c_save.form_submit_button("💾 Salvar Vínculo"):
-                                # Converte Nomes de volta para IDs
                                 new_ids = [sensor_options[name] for name in selected_names]
                                 try:
                                     r_up = requests.post(
@@ -132,41 +126,26 @@ def render_devices_view():
                                 st.session_state["configuring_id"] = None
                                 st.rerun()
 
-                if st.session_state["configuring_id"] == d["id"]:
-                    with st.container(border=True):
-                        st.info(f"⚙️ Configurando Sensores: **{d['name']}**")
-                        try:
-                            r_curr = requests.get(f"{API_URL}/devices/{d['id']}/sensors")
-                            current_ids = r_curr.json() if r_curr.status_code == 200 else []
-                        except: current_ids = []
-                        default_names = [name for name, sid in sensor_options.items() if sid in current_ids]
-                        
-                        with st.form(f"config_sensors_{d['id']}"):
-                            selected_names = st.multiselect("Sensores vinculados:", options=list(sensor_options.keys()), default=default_names)
-                            c_save, c_canc = st.columns([1, 4])
-                            if c_save.form_submit_button("💾 Salvar"):
-                                new_ids = [sensor_options[name] for name in selected_names]
-                                requests.post(f"{API_URL}/devices/{d['id']}/sensors", json={"sensor_ids": new_ids})
-                                st.session_state["configuring_id"] = None
-                                st.rerun()
-                            if c_canc.form_submit_button("Cancelar"):
-                                st.session_state["configuring_id"] = None
-                                st.rerun()
-
+                # Edição
                 elif st.session_state["editing_id"] == d["id"]:
-                     with st.container():
+                    with st.container():
+                        st.info(f"Editando: {d['name']}")
                         with st.form(f"edit_form_{d['id']}"):
                             ec1, ec2, ec3 = st.columns(3)
                             n_name = ec1.text_input("Nome", value=d["name"])
                             n_slug = ec2.text_input("Slug", value=d["slug"])
                             n_loc = ec3.text_input("Local", value=d["location"] or "")
+                            
                             if st.form_submit_button("💾 Salvar"):
-                                requests.patch(f"{API_URL}/devices/{d['id']}", json={"name": n_name, "slug": n_slug, "location": n_loc})
-                                st.session_state["editing_id"] = None
-                                st.rerun()
+                                try:
+                                    requests.patch(f"{API_URL}/devices/{d['id']}", json={"name": n_name, "slug": n_slug, "location": n_loc})
+                                    st.session_state["editing_id"] = None
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erro: {e}")
 
+                # Visualização
                 else:
-                    # --- LINHA DE VISUALIZAÇÃO ---
                     c = st.columns([0.5, 2, 2, 1.5, 1, 2.5])
                     c[0].write(f"#{d['id']}")
                     c[1].write(f"**{d['name']}**")
@@ -188,13 +167,11 @@ def render_devices_view():
                         st.session_state["editing_id"] = None
                         st.rerun()
 
-                    # --- AQUI ESTÁ A MÁGICA DO CALLBACK ---
                     icon_del = "⛔" if d['is_active'] else "♻️"
                     b3.button(
                         icon_del, 
                         key=f"toggle_{d['id']}",
                         help="Arquivar/Ativar",
-                        # O 'on_click' roda a função ANTES do script recarregar
                         on_click=alternar_status_device,
                         args=(d['id'], d['is_active'])
                     )

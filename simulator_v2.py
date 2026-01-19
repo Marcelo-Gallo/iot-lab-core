@@ -78,8 +78,6 @@ async def setup_world(client: httpx.AsyncClient):
     """
     logger.info("🌍 Inicializando a Matrix (Setup)...")
     
-    # --- 1. GARANTIR TIPOS DE SENSORES (SELF-SEEDING) ---
-    # Define o que o simulador PRECISA para funcionar
     required_sensors = {
         "Temperatura": {"name": "Temperatura", "unit": "°C"},
         "Umidade": {"name": "Umidade", "unit": "%"}
@@ -95,7 +93,7 @@ async def setup_world(client: httpx.AsyncClient):
 
     types_map = {}
     
-    # Lógica de "Upsert" (Se não existe, cria)
+    # Lógica de "Upsert" 
     for key, data in required_sensors.items():
         if key in existing_types:
             types_map[key] = existing_types[key]
@@ -113,12 +111,8 @@ async def setup_world(client: httpx.AsyncClient):
 
     logger.info(f"📋 Mapa de Sensores: {types_map}")
 
-    # --- 2. CRIAR DISPOSITIVOS (Igual ao anterior) ---
     bots = []
     logger.info(f"🔨 Fabricando {NUM_DEVICES} dispositivos virtuais...")
-    
-    # ... (O resto do código de devices permanece idêntico, pode manter) ...
-    # Vou repetir o bloco for de devices para facilitar o copy-paste seguro
     
     for i in range(1, NUM_DEVICES + 1):
         dev_name = f"Bot Device {i:02d}"
@@ -148,8 +142,6 @@ async def setup_world(client: httpx.AsyncClient):
             logger.error(f"❌ Falha ao criar {dev_name}: {r_new.text}")
             continue
 
-        # --- NOVA PARTE: O PROVISIONAMENTO AUTOMÁTICO (FASE 9) ---
-        # Agora o simulador avisa a API: "Ei, esse robô TEM esses sensores!"
         sensor_ids_to_link = list(types_map.values()) # Pega IDs de Temp e Umid
         
         r_link = await client.post(

@@ -8,7 +8,7 @@ from app.dashboard.utils import API_URL, carregar_mapa_sensores, converter_para_
 def render_analytics_view():
     st.title("📊 Análise Inteligente de Dados")
     
-    # --- 1. BARRA DE CONFIGURAÇÃO ---
+    # --- BARRA DE CONFIGURAÇÃO ---
     with st.expander("⚙️ Configuração da Análise", expanded=True):
         c1, c2, c3 = st.columns([2, 2, 1])
         with c1:
@@ -30,7 +30,7 @@ def render_analytics_view():
             st.write(""); st.write("") # Espaçamento
             btn_update = st.button("🔄 Gerar Relatório", type="primary", use_container_width=True)
 
-    # --- 2. PROCESSAMENTO ---
+    # --- PROCESSAMENTO ---
     if btn_update:
         try:
             # Busca metadados (para não mostrar IDs crus)
@@ -66,7 +66,7 @@ def render_analytics_view():
                 
                 df = pd.DataFrame(rows)
                 
-                # --- 3. RENDERIZAÇÃO EM CARDS ---
+                # --- RENDERIZAÇÃO EM CARDS ---
                 st.divider()
                 st.subheader("🧠 Insights por Tipo de Sensor")
                 

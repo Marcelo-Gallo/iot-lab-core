@@ -12,18 +12,20 @@ if root_dir not in sys.path:
 from app.dashboard.views.live import render_live_view
 from app.dashboard.views.analytics import render_analytics_view
 from app.dashboard.views.devices import render_devices_view
+from app.dashboard.views.sensor_types import render_sensor_types_view
 
-# 1. Configuração da Página
+# Configuração da Página
 st.set_page_config(page_title="IoT Lab Core", layout="wide")
 
-# 2. Sidebar
+# Sidebar
 st.sidebar.title("🔌 IoT Lab Core")
 st.sidebar.markdown("---")
 
 menu_options = {
     "Monitoramento (Live)": render_live_view,
     "Histórico (Analytics)": render_analytics_view,
-    "Gerenciamento (CRUD)": render_devices_view
+    "Gerenciamento (CRUD)": render_devices_view,
+    "Catálogo de Sensores": render_sensor_types_view,
 }
 
 choice = st.sidebar.radio("Navegação", list(menu_options.keys()))

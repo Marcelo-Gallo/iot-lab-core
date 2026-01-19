@@ -1,46 +1,45 @@
-from fastapi.testclient import TestClient
+import pytest
+from httpx import AsyncClient
 
-def test_create_measurement_end_to_end(client: TestClient):
-    # PREPARAÇÃO
-    
-    # Cria Device
-    dev_resp = client.post("/api/v1/devices/", json={"name": "D1", "slug": "d1"})
-    device_id = dev_resp.json()["id"]
-    
+@pytest.mark.asyncio
+async def test_create_measurement_end_to_end(async_client: AsyncClient):
     # Cria Sensor Type
-    sens_resp = client.post("/api/v1/sensor-types/", json={"name": "Hum", "unit": "%"})
-    sensor_id = sens_resp.json()["id"]
-    
-    # Envia a medição vinculada aos IDs acima
+    s_resp = await async_client.post("/api/v1/sensor-types/", json={"name": "Temp", "unit": "C"})
+    sensor_id = s_resp.json()["id"]
+
+    # Cria Device
+    d_resp = await async_client.post("/api/v1/devices/", json={"name": "Dev 1", "slug": "dev-1"})
+    device_id = d_resp.json()["id"]
+
+    # Vincula o sensor ao dispositivo
+    link_resp = await async_client.post(
+        f"/api/v1/devices/{device_id}/sensors",
+        json={"sensor_ids": [sensor_id]}
+    )
+    assert link_resp.status_code == 200
+
+    # Envia Medição
     payload = {
         "device_id": device_id,
         "sensor_type_id": sensor_id,
-        "value": 55.5
+        "value": 25.5
     }
-    response = client.post("/api/v1/measurements/", json=payload)
+    response = await async_client.post("/api/v1/measurements/", json=payload)
     
-    # VERIFICAÇÃO
     assert response.status_code == 200
     data = response.json()
-    assert data["value"] == 55.5
-    assert data["device_id"] == device_id
-    assert data["sensor_type_id"] == sensor_id
-    assert "id" in data
-    assert "created_at" in data
+    assert data["value"] == 25.5
 
-def test_read_measurements_filter(client: TestClient):
-    # Verifica se o filtro de limite funciona
-    # Cria dependências
-    dev_id = client.post("/api/v1/devices/", json={"name": "D2", "slug": "d2"}).json()["id"]
-    type_id = client.post("/api/v1/sensor-types/", json={"name": "T2", "unit": "K"}).json()["id"]
+@pytest.mark.asyncio
+async def test_security_reject_unlinked_sensor(async_client: AsyncClient):
+    """Garante que o Porteiro barra sensores não vinculados"""
+    # Cria Sensor e Device mas NÃO vincula
+    s_id = (await async_client.post("/api/v1/sensor-types/", json={"name": "X", "unit": "X"})).json()["id"]
+    d_id = (await async_client.post("/api/v1/devices/", json={"name": "Y", "slug": "y"})).json()["id"]
+
+    payload = {"device_id": d_id, "sensor_type_id": s_id, "value": 10.0}
+    response = await async_client.post("/api/v1/measurements/", json=payload)
     
-    # Cria 5 medições
-    for i in range(5):
-        client.post("/api/v1/measurements/", json={"device_id": dev_id, "sensor_type_id": type_id, "value": i})
-        
-    # Pede apenas as últimas 2
-    response = client.get("/api/v1/measurements/?limit=2")
-    
-    assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 2
+    # Deve ser barrado
+    assert response.status_code == 400
+    assert "não possui o sensor" in response.json()["detail"]

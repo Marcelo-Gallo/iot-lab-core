@@ -10,3 +10,8 @@ class SensorTypeCreate(BaseModel):
 # O que a API devolve
 class SensorTypePublic(SensorTypeCreate):
     id: int
+
+class SensorTypeUpdate(BaseModel):
+    name: Optional[str] = None
+    unit: Optional[str] = None
+    description: Optional[str] = None

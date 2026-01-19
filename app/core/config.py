@@ -1,17 +1,18 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
-    # Configurações Gerais
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=True,
+        extra="ignore"
+    )
+
+    # Variáveis de Aplicação
     PROJECT_NAME: str = "IoT Lab"
     API_V1_STR: str = "/api/v1"
     
-    # Banco de Dados
-    DATABASE_URL: str # O Pydantic busca a var no .env
-
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
-        extra="ignore"
+    # Banco de Dados (Lê do .env)
+    DATABASE_URL: str 
 
 # Instância única para usar no projeto todo
 settings = Settings()

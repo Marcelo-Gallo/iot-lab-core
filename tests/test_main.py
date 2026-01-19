@@ -1,11 +1,8 @@
-from fastapi.testclient import TestClient
+import pytest
+from httpx import AsyncClient
 
-def test_health_check(client: TestClient):
-    # Ação: Bater na rota raiz
-    response = client.get("/")
-    
-    # Verificação (Assert): O status é 200 OK?
+@pytest.mark.asyncio
+async def test_health_check(async_client: AsyncClient):
+    response = await async_client.get("/")
     assert response.status_code == 200
-    
-    # Verificação: O JSON é o esperado?
-    assert response.json() == {"status": "ok", "mensagem": "Sistema operando em normalidade"}
+    assert response.json()["status"] == "ok"

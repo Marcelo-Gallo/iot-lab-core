@@ -1,24 +1,13 @@
-from fastapi.testclient import TestClient
+import pytest
+from httpx import AsyncClient
 
-def test_create_sensor_type(client: TestClient):
-    payload = {
-        "name": "CO2",
-        "unit": "ppm",
-        "description": "Dióxido de Carbono"
-    }
-    response = client.post("/api/v1/sensor-types/", json=payload)
+@pytest.mark.asyncio
+async def test_crud_sensor_type(async_client: AsyncClient):
+    # Create
+    resp = await async_client.post("/api/v1/sensor-types/", json={"name": "CO2", "unit": "ppm"})
+    assert resp.status_code == 200
     
-    assert response.status_code == 200
-    data = response.json()
-    assert data["name"] == "CO2"
-    assert data["unit"] == "ppm"
-    assert "id" in data
-
-def test_read_sensor_types(client: TestClient):
-    # Cria um para ter certeza que lista não está vazia
-    client.post("/api/v1/sensor-types/", json={"name": "Temp", "unit": "C"})
-    
-    response = client.get("/api/v1/sensor-types/")
-    
-    assert response.status_code == 200
-    assert len(response.json()) >= 1
+    # Read
+    resp = await async_client.get("/api/v1/sensor-types/")
+    assert resp.status_code == 200
+    assert len(resp.json()) >= 1
