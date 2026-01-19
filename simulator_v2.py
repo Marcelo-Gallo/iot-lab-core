@@ -135,14 +135,33 @@ async def setup_world(client: httpx.AsyncClient):
         
         if r_new.status_code == 200:
             dev_id = r_new.json()["id"]
+            logger.info(f"✨ {dev_name} criado com sucesso.")
         elif r_new.status_code == 400:
             # Busca ID se já existe
             all_devs = (await client.get(f"{API_URL}/devices/?limit=1000")).json()
             target = next((d for d in all_devs if d["slug"] == dev_slug), None)
-            if target: dev_id = target["id"]
+            if target: 
+                dev_id = target["id"]
+                # logger.info(f"ℹ️ {dev_name} já existe (ID: {dev_id}).")
             else: continue
         else:
+            logger.error(f"❌ Falha ao criar {dev_name}: {r_new.text}")
             continue
+
+        # --- NOVA PARTE: O PROVISIONAMENTO AUTOMÁTICO (FASE 9) ---
+        # Agora o simulador avisa a API: "Ei, esse robô TEM esses sensores!"
+        sensor_ids_to_link = list(types_map.values()) # Pega IDs de Temp e Umid
+        
+        r_link = await client.post(
+            f"{API_URL}/devices/{dev_id}/sensors",
+            json={"sensor_ids": sensor_ids_to_link}
+        )
+        
+        if r_link.status_code == 200:
+            logger.info(f"🔗 Sensores vinculados ao {dev_name}: {list(types_map.keys())}")
+        else:
+            logger.warning(f"⚠️ Falha ao vincular sensores no {dev_name}: {r_link.text}")
+        # ---------------------------------------------------------
 
         bot = DeviceBot(dev_id, dev_name, types_map)
         bots.append(bot)

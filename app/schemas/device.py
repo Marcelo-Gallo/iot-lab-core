@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 
 # O que o usuário PRECISAR enviar para criar
 class DeviceCreate(BaseModel):
@@ -19,3 +19,6 @@ class DeviceUpdate(BaseModel):
     location: Optional[str] = None
     description: Optional[str] = None
     is_active: Optional[bool] = None
+
+class DeviceSensorsUpdate(BaseModel):
+    sensor_ids: List[int]

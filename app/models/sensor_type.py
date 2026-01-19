@@ -1,10 +1,20 @@
-from sqlmodel import SQLModel, Field
-from typing import Optional
+from sqlmodel import SQLModel, Field, Relationship
+from typing import Optional, List, TYPE_CHECKING
+
+from app.models.device_sensor import DeviceSensorLink
+
+if TYPE_CHECKING:
+    from app.models.device import Device
 
 class SensorType(SQLModel, table=True):
     __tablename__ = "sensor_types"
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    name: str = Field(index=True, unique=True)  # Ex: "Temperatura", "Umidade"
-    unit: str  # Ex: "°C", "%", "PPM"
+    name: str = Field(index=True, unique=True)
+    unit: str
     description: Optional[str] = None
+
+    devices: List["Device"] = Relationship(
+        back_populates="sensors", 
+        link_model=DeviceSensorLink
+    )

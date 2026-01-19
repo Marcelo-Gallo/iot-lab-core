@@ -3,6 +3,13 @@ from contextlib import asynccontextmanager
 from app.api.v1.api import api_router
 from app.core.database import init_db
 
+# --- IMPORTS DE MODELOS ---
+# Importamos todos para garantir que o SQLModel detecte os metadados
+from app.models.device import Device
+from app.models.sensor_type import SensorType
+from app.models.measurement import Measurement
+from app.models.device_sensor import DeviceSensorLink # <--- ADICIONE ESTA LINHA
+
 # --- LIFESPAN ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -12,7 +19,6 @@ async def lifespan(app: FastAPI):
     
     yield # A aplicação roda aqui
     
-
     print("🛑 Encerrando aplicação.")
 
 # --- APP SETUP ---

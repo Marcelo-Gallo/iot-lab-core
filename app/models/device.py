@@ -1,14 +1,24 @@
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING
 from datetime import datetime
-from sqlmodel import SQLModel, Field
+from sqlmodel import SQLModel, Field, Relationship
+
+from app.models.device_sensor import DeviceSensorLink
+
+if TYPE_CHECKING:
+    from app.models.sensor_type import SensorType
 
 class Device(SQLModel, table=True):
-	__tablename__ = "devices" #explicitando o nome da tabela
-	
-	id: Optional[int] = Field(default=None, primary_key=True)
-	name: str = Field(index=True) #Ex -> ESP32 Estufa
-	slug: str = Field(unique=True, index=True) #Ex -> esp32-estufa (Identificador único mais amigável, pra melhorar a dev experience e manutenção)
-	location: Optional[str] = None #Ex -> Laboratório 1
-	description: Optional[str] = None
-	is_active: bool = Field(default=True)
-	deleted_at: Optional[datetime] = Field(default=None)
+    __tablename__ = "devices"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(index=True)
+    slug: str = Field(unique=True, index=True)
+    location: Optional[str] = None
+    description: Optional[str] = None
+    is_active: bool = Field(default=True)
+    deleted_at: Optional[datetime] = Field(default=None)
+
+    sensors: List["SensorType"] = Relationship(
+        back_populates="devices", 
+        link_model=DeviceSensorLink 
+    )
