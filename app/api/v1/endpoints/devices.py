@@ -3,6 +3,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from typing import List
 from sqlalchemy import desc
+from sqlalchemy.orm import selectinload
 
 from app.core.database import get_session
 from app.models.device import Device
@@ -19,19 +20,34 @@ async def create_device(
     device: DeviceCreate, 
     session: AsyncSession = Depends(get_session)
 ):
-    # Verifica unicidade do slug
     query = select(Device).where(Device.slug == device.slug)
     result = await session.exec(query)
-    existing_device = result.first()
-    
-    if existing_device:
+    if result.first():
         raise HTTPException(status_code=400, detail="Já existe um dispositivo com este slug.")
 
-    db_device = Device.model_validate(device)
+    db_device = Device.model_validate(device, update={"sensor_ids": None}) 
+    device_data = device.model_dump(exclude={"sensor_ids"})
+    db_device = Device(**device_data)
+    
     session.add(db_device)
     await session.commit()
     await session.refresh(db_device)
-    return db_device
+    
+    if device.sensor_ids:
+        for s_id in device.sensor_ids:
+            link = DeviceSensorLink(device_id=db_device.id, sensor_type_id=s_id)
+            session.add(link)
+        await session.commit()
+
+    query_refresh = (
+        select(Device)
+        .where(Device.id == db_device.id)
+        .options(selectinload(Device.sensors)) # <--- A Mágica do Async
+    )
+    result = await session.exec(query_refresh)
+    device_ready = result.one()
+    
+    return device_ready
 
 @router.get("/", response_model=List[DevicePublic])
 async def read_devices(
@@ -39,8 +55,14 @@ async def read_devices(
     skip: int = 0,
     limit: int = 100,
 ):
-    # Ordenação LIFO (Last In, First Out)
-    query = select(Device).order_by(Device.id.desc()).offset(skip).limit(limit)
+    query = (
+        select(Device)
+        .where(Device.deleted_at == None)
+        .options(selectinload(Device.sensors))
+        .order_by(Device.id.desc())
+        .offset(skip)
+        .limit(limit)
+    )
     result = await session.exec(query)
     return result.all()
 

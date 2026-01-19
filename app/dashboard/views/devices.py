@@ -42,20 +42,60 @@ def render_devices_view():
         c1, c2 = st.columns(2)
         name = c1.text_input("Nome", placeholder="Ex: Arduino Lab 1")
         slug = c2.text_input("Slug (ID Único)", placeholder="Ex: arduino-lab-1")
+        
         c3, c4 = st.columns(2)
         local = c3.text_input("Localização", placeholder="Ex: Bancada A")
         
+        try:
+            r_types = requests.get(f"{API_URL}/sensor-types/")
+            opcoes_sensores = {s['name']: s['id'] for s in r_types.json()} if r_types.status_code == 200 else {}
+        except:
+            opcoes_sensores = {}
+            
+        selected_sensors = c4.multiselect("Vincular Sensores (Opcional)", options=list(opcoes_sensores.keys()))
+
         if st.form_submit_button("Cadastrar Dispositivo"):
-            payload = {"name": name, "slug": slug, "location": local, "is_active": True}
-            try:
-                r = requests.post(f"{API_URL}/devices/", json=payload)
-                if r.status_code == 200:
-                    st.success(f"Dispositivo '{name}' criado!")
-                    st.rerun()
-                else:
-                    st.error(f"Erro: {r.json().get('detail', 'Desconhecido')}")
-            except Exception as e:
-                st.error(f"Erro Conexão: {e}")
+            
+            if not name or not slug:
+                st.error("⚠️ Nome e Slug são obrigatórios!")
+            else:
+                ids_escolhidos = [opcoes_sensores[name] for name in selected_sensors]
+
+                payload = {
+                    "name": name, 
+                    "slug": slug, 
+                    "location": local or None, #
+                    "is_active": True,
+                    "sensor_ids": ids_escolhidos
+                }
+                
+                try:
+                    r = requests.post(f"{API_URL}/devices/", json=payload)
+                    
+                    if r.status_code == 200:
+                        st.success(f"Dispositivo '{name}' criado com sucesso!")
+                        st.rerun()
+                    
+                    elif r.status_code == 422:
+                        erro_json = r.json()
+                        detalhes = erro_json.get("detail", [])
+                        msg_final = "Erro de Validação:\n"
+                        
+                        if isinstance(detalhes, list):
+                            for err in detalhes:
+                                campo = err.get("loc", ["?"])[-1]
+                                msg = err.get("msg", "")
+                                msg_final += f"- **{campo}**: {msg}\n"
+                        else:
+                            msg_final += str(detalhes)
+                            
+                        st.error(msg_final)
+                        
+                    else:
+                        st.error(f"Erro ({r.status_code}): {r.text}")
+
+                except Exception as e:
+                    st.error(f"Erro Conexão: {e}")
 
     st.divider()
     
@@ -64,9 +104,13 @@ def render_devices_view():
         res = requests.get(f"{API_URL}/devices/")
         devices = res.json() if res.status_code == 200 else []
         
+        # Carrega tipos para o formulário de vínculo
         res_types = requests.get(f"{API_URL}/sensor-types/")
         sensor_types = res_types.json() if res_types.status_code == 200 else []
+        # Mapa Nome -> ID
         sensor_options = {s['name']: s['id'] for s in sensor_types}
+        # Mapa ID -> Nome (para reconstruir nomes no multiselect se necessário)
+        sensor_id_map = {s['id']: s['name'] for s in sensor_types}
         
         if not devices:
             st.info("Nenhum dispositivo cadastrado.")
@@ -76,7 +120,7 @@ def render_devices_view():
 
             cols = st.columns([0.5, 2, 2, 1.5, 1, 2.5])
             cols[0].markdown("**ID**")
-            cols[1].markdown("**Nome**")
+            cols[1].markdown("**Nome & Sensores**") # Título ajustado
             cols[2].markdown("**Slug**")
             cols[3].markdown("**Local**")
             cols[4].markdown("**Status**")
@@ -85,17 +129,18 @@ def render_devices_view():
 
             for d in devices_filtrados:
                 
-                # Configuração de sensores
+                # MODO CONFIGURAÇÃO (VÍNCULOS)
                 if st.session_state["configuring_id"] == d["id"]:
                     with st.container(border=True):
                         st.info(f"⚙️ Configurando Sensores: **{d['name']}**")
                         
-                        try:
-                            r_curr = requests.get(f"{API_URL}/devices/{d['id']}/sensors")
-                            current_ids = r_curr.json() if r_curr.status_code == 200 else []
-                        except: current_ids = []
+                        # Agora podemos pegar os sensores direto do objeto device (Performance++)
+                        # Mas para garantir integridade caso a lista esteja defasada, mantemos a chamada GET específica ou usamos a lista local
+                        current_sensors_objs = d.get('sensors', [])
+                        current_ids = [s['id'] for s in current_sensors_objs]
                         
-                        default_names = [name for name, sid in sensor_options.items() if sid in current_ids]
+                        # Filtra nomes baseados nos IDs atuais
+                        default_names = [sensor_id_map[sid] for sid in current_ids if sid in sensor_id_map]
                         
                         with st.form(f"config_sensors_{d['id']}"):
                             selected_names = st.multiselect(
@@ -126,7 +171,7 @@ def render_devices_view():
                                 st.session_state["configuring_id"] = None
                                 st.rerun()
 
-                # Edição
+                # MODO EDIÇÃO (CAMPOS BÁSICOS)
                 elif st.session_state["editing_id"] == d["id"]:
                     with st.container():
                         st.info(f"Editando: {d['name']}")
@@ -144,11 +189,40 @@ def render_devices_view():
                                 except Exception as e:
                                     st.error(f"Erro: {e}")
 
-                # Visualização
+                # MODO VISUALIZAÇÃO 
                 else:
                     c = st.columns([0.5, 2, 2, 1.5, 1, 2.5])
                     c[0].write(f"#{d['id']}")
-                    c[1].write(f"**{d['name']}**")
+                    
+                    with c[1]:
+                        st.write(f"**{d['name']}**")
+                        sensores = d.get('sensors', [])
+                        if sensores:
+                            tags_html = ""
+                            for s in sensores:
+                                is_sensor_active = s.get('is_active', True)
+                                
+                                bg_color = "#297A17" if is_sensor_active else "#555"
+                                opacity = "1.0" if is_sensor_active else "0.6"
+                                tooltip = "Ativo" if is_sensor_active else "Arquivado (Desativado)"
+                                
+                                style = f"""
+                                    background-color:{bg_color}; 
+                                    color:white; 
+                                    padding:2px 8px; 
+                                    border-radius:12px; 
+                                    font-size:0.75em; 
+                                    margin-right:4px; 
+                                    opacity:{opacity};
+                                    display:inline-block;
+                                    margin-bottom:2px;
+                                """
+                                tags_html += f"<span style='{style}' title='{tooltip}'>{s['name']}</span>"
+                            
+                            st.markdown(tags_html, unsafe_allow_html=True)
+                        else:
+                            st.caption("Sem sensores")
+
                     c[2].code(d['slug'])
                     c[3].write(d['location'])
                     

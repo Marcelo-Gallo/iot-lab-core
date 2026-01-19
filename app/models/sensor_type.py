@@ -1,5 +1,6 @@
 from sqlmodel import SQLModel, Field, Relationship
 from typing import Optional, List, TYPE_CHECKING
+from datetime import datetime
 
 from app.models.device_sensor import DeviceSensorLink
 
@@ -13,6 +14,8 @@ class SensorType(SQLModel, table=True):
     name: str = Field(index=True, unique=True)
     unit: str
     description: Optional[str] = None
+    is_active: bool = Field(default=True)
+    deleted_at: Optional[datetime] = Field(default=None)
 
     devices: List["Device"] = Relationship(
         back_populates="sensors", 

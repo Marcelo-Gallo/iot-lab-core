@@ -9,7 +9,8 @@ from sqlalchemy import func, asc
 from app.core.database import get_session
 from app.models.measurement import Measurement
 from app.models.device import Device
-from app.models.device_sensor import DeviceSensorLink # <--- Importante para validação
+from app.models.device_sensor import DeviceSensorLink
+from app.models.sensor_type import SensorType
 from app.schemas.measurement import MeasurementCreate, MeasurementPublic, MeasurementAnalytics
 
 router = APIRouter()
@@ -19,21 +20,15 @@ async def create_measurement(
     measurement_in: MeasurementCreate, 
     session: AsyncSession = Depends(get_session)
 ):
-    # --- 1. O PORTEIRO (Validações de Segurança) ---
-    
     # Busca o dispositivo no banco para ver o status
     device = await session.get(Device, measurement_in.device_id)
-    
-    # A. Existe?
+    # Existe?
     if not device:
         raise HTTPException(status_code=404, detail="Dispositivo não encontrado.")
-    
-    # B. Está Ativo? (Sua solicitação)
+    # Está Ativo?
     if not device.is_active:
         raise HTTPException(status_code=403, detail="Dispositivo inativo. Medição rejeitada.")
-
-    # C. Tem permissão para esse sensor? (O poder da Fase 9!)
-    # Verifica se existe o vínculo na tabela intermediária
+    # Tem permissão para esse sensor?
     query_link = select(DeviceSensorLink).where(
         DeviceSensorLink.device_id == measurement_in.device_id,
         DeviceSensorLink.sensor_type_id == measurement_in.sensor_type_id
@@ -44,14 +39,21 @@ async def create_measurement(
              status_code=400, 
              detail=f"Este dispositivo não possui o sensor ID {measurement_in.sensor_type_id} vinculado."
          )
+    
+    sensor_type = await session.get(SensorType, measurement_in.sensor_type_id)
+    if not sensor_type:
+        raise HTTPException(status_code=404, detail="Tipo de sensor não encontrado.")
+    
+    if not sensor_type.is_active:
+        raise HTTPException(status_code=400, detail="Medição rejeitada: Este tipo de sensor está arquivado.")
 
-    # --- 2. GRAVAÇÃO (Só chega aqui se passar pelo porteiro) ---
+    # GRAVAÇÃO
     db_measurement = Measurement.model_validate(measurement_in)
     session.add(db_measurement)
     await session.commit()
     await session.refresh(db_measurement)
 
-    # --- 3. BROADCAST (WebSocket) ---
+    #BROADCAST (WebSocket)
     payload = {
         "id": db_measurement.id,
         "device_id": db_measurement.device_id,

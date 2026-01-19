@@ -45,11 +45,11 @@ def render_sensor_types_view():
             return
 
         # Cabeçalho da Tabela
-        col_h = st.columns([0.5, 2, 1, 3, 1.5]) # Ajustei larguras
+        col_h = st.columns([0.5, 2, 1, 3, 1.5])
         col_h[0].markdown("**ID**")
         col_h[1].markdown("**Nome**")
         col_h[2].markdown("**Unidade**")
-        col_h[3].markdown("**Descrição**")
+        col_h[3].markdown("**Descrição / Status**") # Cabeçalho atualizado
         col_h[4].markdown("**Ações**")
         st.markdown("---")
 
@@ -88,25 +88,42 @@ def render_sensor_types_view():
                 c[0].write(f"#{s['id']}")
                 c[1].write(f"**{s['name']}**")
                 c[2].code(s['unit'])
-                c[3].write(s.get('description', '-'))
+
+                is_active = s.get('is_active', True)
+                status_icon = "🟢" if is_active else "🔴"
+                c[3].write(f"{status_icon} {s.get('description', '-')}")
                 
-                # Coluna de Ações (Editar e Excluir)
                 b_edit, b_del = c[4].columns(2)
                 
                 if b_edit.button("✏️", key=f"btn_edit_{s['id']}"):
                     st.session_state["editing_sensor_id"] = s['id']
                     st.rerun()
 
-                if b_del.button("🗑️", key=f"btn_del_{s['id']}"):
-                    try:
-                        r_del = requests.delete(f"{API_URL}/sensor-types/{s['id']}")
-                        if r_del.status_code == 200:
-                            st.success("Removido!")
-                            st.rerun()
-                        else:
-                            st.error("Não foi possível excluir (provavelmente em uso).")
-                    except:
-                        st.error("Erro de conexão.")
+                if is_active:
+                    if b_del.button("⛔", key=f"btn_arch_{s['id']}", help="Arquivar (Desativar)"):
+                        try:
+                            r = requests.delete(f"{API_URL}/sensor-types/{s['id']}")
+                            if r.status_code == 200:
+                                st.toast(f"Sensor '{s['name']}' arquivado!")
+                                st.rerun()
+                            else:
+                                st.error(f"Erro ao arquivar: {r.text}")
+                        except Exception as e:
+                            st.error(f"Erro: {e}")
+                else:
+                    if b_del.button("♻️", key=f"btn_rest_{s['id']}", help="Restaurar (Reativar)"):
+                        try:
+                            r = requests.patch(
+                                f"{API_URL}/sensor-types/{s['id']}", 
+                                json={"is_active": True}
+                            )
+                            if r.status_code == 200:
+                                st.toast(f"Sensor '{s['name']}' restaurado com sucesso!")
+                                st.rerun()
+                            else:
+                                st.error(f"Erro ao restaurar: {r.text}")
+                        except Exception as e:
+                            st.error(f"Erro: {e}")
 
             st.divider()
 

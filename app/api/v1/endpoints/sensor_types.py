@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from typing import List
+from datetime import datetime
 
 from app.core.database import get_session
 from app.models.sensor_type import SensorType
@@ -44,16 +45,15 @@ async def delete_sensor_type(
         raise HTTPException(status_code=404, detail="Tipo de sensor não encontrado.")
     
     try:
-        await session.delete(sensor)
+        sensor.is_active = False
+        sensor.deleted_at = datetime.utcnow()
+        
+        session.add(sensor)
         await session.commit()
-        return {"ok": True}
+        return {"ok": True, "status": "arquivado"}
     except Exception as e:
-        # Geralmente erro de Integridade (IntegrityError)
-        raise HTTPException(
-            status_code=400, 
-            detail="Não é possível excluir este tipo de sensor pois ele já possui medições ou dispositivos vinculados."
-        )
-
+        raise HTTPException(status_code=400, detail=f"Erro ao arquivar: {e}")
+    
 @router.patch("/{sensor_id}", response_model=SensorTypePublic)
 async def update_sensor_type(
     sensor_id: int,
