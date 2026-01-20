@@ -4,6 +4,9 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from typing import List
 from datetime import datetime
 
+from app.api.v1 import deps
+from app.models.user import User
+
 from app.core.database import get_session
 from app.models.sensor_type import SensorType
 from app.schemas.sensor_type import SensorTypeCreate, SensorTypePublic, SensorTypeUpdate
@@ -20,7 +23,8 @@ async def read_sensor_types(session: AsyncSession = Depends(get_session)):
 @router.post("/", response_model=SensorTypePublic)
 async def create_sensor_type(
     sensor_type: SensorTypeCreate, 
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(deps.get_current_active_superuser)
 ):
     # Verifica duplicidade de nome
     query = select(SensorType).where(SensorType.name == sensor_type.name)
@@ -38,7 +42,8 @@ async def create_sensor_type(
 @router.delete("/{sensor_id}")
 async def delete_sensor_type(
     sensor_id: int, 
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(deps.get_current_active_superuser)
 ):
     sensor = await session.get(SensorType, sensor_id)
     if not sensor:
@@ -58,7 +63,8 @@ async def delete_sensor_type(
 async def update_sensor_type(
     sensor_id: int,
     sensor_update: SensorTypeUpdate,
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(deps.get_current_active_superuser)
 ):
     # Busca no banco
     db_sensor = await session.get(SensorType, sensor_id)

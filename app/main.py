@@ -2,6 +2,10 @@ from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from app.api.v1.api import api_router
 from app.core.database import init_db
+from sqlalchemy.orm import sessionmaker
+from sqlmodel.ext.asyncio.session import AsyncSession
+from app.core.database import init_db, engine
+from app.core.seed import create_initial_data
 
 # --- IMPORTS DE MODELOS ---
 # Importamos todos para garantir que o SQLModel detecte os metadados
@@ -16,7 +20,11 @@ async def lifespan(app: FastAPI):
     # Startup: Cria as tabelas no banco de forma assíncrona
     await init_db()
     print("✅ Tabelas verificadas/criadas (Async).")
-    
+    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with async_session() as session:
+        await create_initial_data(session)
+        print("✅ Seed executado com sucesso.")
+
     yield # A aplicação roda aqui
     
     print("🛑 Encerrando aplicação.")

@@ -2,11 +2,22 @@ import streamlit as st
 import requests
 from app.dashboard.utils import API_URL
 
-# FUNÇÃO CALLBACK
+# --- FUNÇÃO HELPER PARA TOKEN ---
+def get_auth_headers():
+    token = st.session_state.get("token")
+    return {"Authorization": f"Bearer {token}"} if token else {}
+
+# --- FUNÇÃO CALLBACK ---
 def alternar_status_device(device_id, status_atual):
     novo_status = not status_atual
+    headers = get_auth_headers()
+    
     try:
-        r = requests.patch(f"{API_URL}/devices/{device_id}", json={"is_active": novo_status})
+        r = requests.patch(
+            f"{API_URL}/devices/{device_id}", 
+            json={"is_active": novo_status},
+            headers=headers # <--- Autenticação
+        )
         if r.status_code == 200:
             msg = "Dispositivo ativado!" if novo_status else "Dispositivo arquivado."
             st.session_state["feedback_msg"] = msg
@@ -20,6 +31,9 @@ def alternar_status_device(device_id, status_atual):
 
 def render_devices_view():
     st.title("📡 Gerenciamento de Dispositivos")
+    
+    # Prepara headers para todas as requisições desta view
+    headers = get_auth_headers()
     
     # GERENCIAMENTO DE ESTADO
     if "editing_id" not in st.session_state: st.session_state["editing_id"] = None
@@ -46,8 +60,9 @@ def render_devices_view():
         c3, c4 = st.columns(2)
         local = c3.text_input("Localização", placeholder="Ex: Bancada A")
         
+        # Busca tipos de sensores para o dropdown (GET pode ser protegido ou público)
         try:
-            r_types = requests.get(f"{API_URL}/sensor-types/")
+            r_types = requests.get(f"{API_URL}/sensor-types/", headers=headers)
             opcoes_sensores = {s['name']: s['id'] for s in r_types.json()} if r_types.status_code == 200 else {}
         except:
             opcoes_sensores = {}
@@ -64,13 +79,13 @@ def render_devices_view():
                 payload = {
                     "name": name, 
                     "slug": slug, 
-                    "location": local or None, #
+                    "location": local or None, 
                     "is_active": True,
                     "sensor_ids": ids_escolhidos
                 }
                 
                 try:
-                    r = requests.post(f"{API_URL}/devices/", json=payload)
+                    r = requests.post(f"{API_URL}/devices/", json=payload, headers=headers) # <--- Auth
                     
                     if r.status_code == 200:
                         st.success(f"Dispositivo '{name}' criado com sucesso!")
@@ -90,6 +105,9 @@ def render_devices_view():
                             msg_final += str(detalhes)
                             
                         st.error(msg_final)
+                    
+                    elif r.status_code == 401:
+                        st.error("⛔ Sessão expirada ou sem permissão. Faça login novamente.")
                         
                     else:
                         st.error(f"Erro ({r.status_code}): {r.text}")
@@ -101,15 +119,20 @@ def render_devices_view():
     
     # LISTAGEM
     try:
-        res = requests.get(f"{API_URL}/devices/")
+        # Busca a lista (GET)
+        res = requests.get(f"{API_URL}/devices/", headers=headers)
+        
+        if res.status_code == 401:
+            st.warning("🔒 Você precisa estar logado para ver os dispositivos.")
+            return
+
         devices = res.json() if res.status_code == 200 else []
         
         # Carrega tipos para o formulário de vínculo
-        res_types = requests.get(f"{API_URL}/sensor-types/")
+        res_types = requests.get(f"{API_URL}/sensor-types/", headers=headers)
         sensor_types = res_types.json() if res_types.status_code == 200 else []
-        # Mapa Nome -> ID
+        
         sensor_options = {s['name']: s['id'] for s in sensor_types}
-        # Mapa ID -> Nome (para reconstruir nomes no multiselect se necessário)
         sensor_id_map = {s['id']: s['name'] for s in sensor_types}
         
         if not devices:
@@ -120,7 +143,7 @@ def render_devices_view():
 
             cols = st.columns([0.5, 2, 2, 1.5, 1, 2.5])
             cols[0].markdown("**ID**")
-            cols[1].markdown("**Nome & Sensores**") # Título ajustado
+            cols[1].markdown("**Nome & Sensores**") 
             cols[2].markdown("**Slug**")
             cols[3].markdown("**Local**")
             cols[4].markdown("**Status**")
@@ -134,12 +157,9 @@ def render_devices_view():
                     with st.container(border=True):
                         st.info(f"⚙️ Configurando Sensores: **{d['name']}**")
                         
-                        # Agora podemos pegar os sensores direto do objeto device (Performance++)
-                        # Mas para garantir integridade caso a lista esteja defasada, mantemos a chamada GET específica ou usamos a lista local
                         current_sensors_objs = d.get('sensors', [])
                         current_ids = [s['id'] for s in current_sensors_objs]
                         
-                        # Filtra nomes baseados nos IDs atuais
                         default_names = [sensor_id_map[sid] for sid in current_ids if sid in sensor_id_map]
                         
                         with st.form(f"config_sensors_{d['id']}"):
@@ -155,7 +175,8 @@ def render_devices_view():
                                 try:
                                     r_up = requests.post(
                                         f"{API_URL}/devices/{d['id']}/sensors", 
-                                        json={"sensor_ids": new_ids}
+                                        json={"sensor_ids": new_ids},
+                                        headers=headers # <--- Auth
                                     )
                                     if r_up.status_code == 200:
                                         st.session_state["feedback_msg"] = "Vínculos atualizados com sucesso!"
@@ -183,7 +204,11 @@ def render_devices_view():
                             
                             if st.form_submit_button("💾 Salvar"):
                                 try:
-                                    requests.patch(f"{API_URL}/devices/{d['id']}", json={"name": n_name, "slug": n_slug, "location": n_loc})
+                                    requests.patch(
+                                        f"{API_URL}/devices/{d['id']}", 
+                                        json={"name": n_name, "slug": n_slug, "location": n_loc},
+                                        headers=headers # <--- Auth
+                                    )
                                     st.session_state["editing_id"] = None
                                     st.rerun()
                                 except Exception as e:
@@ -246,7 +271,7 @@ def render_devices_view():
                         icon_del, 
                         key=f"toggle_{d['id']}",
                         help="Arquivar/Ativar",
-                        on_click=alternar_status_device,
+                        on_click=alternar_status_device, # Callback usa get_auth_headers internamente
                         args=(d['id'], d['is_active'])
                     )
                 

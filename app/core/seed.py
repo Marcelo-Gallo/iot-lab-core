@@ -1,54 +1,33 @@
-from sqlmodel import Session, select
+from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession # <--- Import Async
+
 from app.models.sensor_type import SensorType
 from app.models.device import Device
+from app.models.user import User
+from app.core.security import get_password_hash
 
-def create_initial_data(session: Session):
-    """
-    Verifica se os tipos básicos de sensores existem.
-    Se não, cria eles.
-    """
-    # Lista do que é é necessário que exista no banco
+async def create_initial_data(session: AsyncSession): # <--- Função agora é async
     initial_types = [
         {"name": "Temperatura", "unit": "°C", "description": "Temperatura Ambiente"},
         {"name": "Umidade", "unit": "%", "description": "Umidade Relativa do Ar"},
     ]
-
-    for data in initial_types:
-        # Verifica se já existe pelo nome
-        query = select(SensorType).where(SensorType.name == data["name"])
-        existing = session.exec(query).first()
-
-        # Se não existir, cria
-        if not existing:
-            print(f"🌱 Semeando banco: Criando sensor '{data['name']}'...")
-            sensor_type = SensorType(**data) # Desempacota o dicionário
-            session.add(sensor_type)
-
-    #Lista de Dispositivos
-    initial_devices = [
-        {
-            "name": "Protótipo ESP32 - Alpha",
-            "slug": "esp32-alpha",
-            "location": "Laboratório 1",
-            "is_active": True
-        },
-        {
-            "name": "Estação Meteorológica",
-            "slug": "weather-station-01",
-            "location": "Telhado",
-            "is_active": True
-        }
-    ]
-
-    for dev_data in initial_devices:
-        # Verifica pelo SLUG (que é único)
-        query = select(Device).where(Device.slug == dev_data["slug"])
-        existing = session.exec(query).first()
-
-        if not existing:
-            print(f"🌱 Seed: Criando Dispositivo '{dev_data['name']}'...")
-            device = Device(**dev_data)
-            session.add(device)
     
-    # Salva tudo
-    session.commit()
+    for data in initial_types:
+        result = await session.exec(select(SensorType).where(SensorType.name == data["name"]))
+        if not result.first():
+            print(f"🌱 Seed: Criando sensor '{data['name']}'...")
+            session.add(SensorType(**data))
+
+    result = await session.exec(select(User).where(User.username == "admin"))
+    if not result.first():
+        print("👤 Seed: Criando Superusuário 'admin'...")
+        user = User(
+            username="admin",
+            email="admin@iotlab.com",
+            hashed_password=get_password_hash("admin123"),
+            is_superuser=True,
+            is_active=True,
+        )
+        session.add(user)
+    
+    await session.commit()

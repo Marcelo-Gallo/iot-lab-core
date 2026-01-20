@@ -3,6 +3,9 @@ import requests
 from app.dashboard.utils import API_URL
 
 def render_sensor_types_view():
+    token = st.session_state.get("token")
+    headers = {"Authorization": f"Bearer {token}"}
+
     st.title("📏 Catálogo de Sensores")
     st.markdown("Defina aqui as grandezas físicas que o laboratório pode medir.")
 
@@ -24,7 +27,7 @@ def render_sensor_types_view():
                 else:
                     payload = {"name": name, "unit": unit, "description": desc}
                     try:
-                        r = requests.post(f"{API_URL}/sensor-types/", json=payload)
+                        r = requests.post(f"{API_URL}/sensor-types/", json=payload, headers=headers)
                         if r.status_code == 200:
                             st.success(f"Sensacional! '{name}' agora faz parte do sistema.")
                             st.rerun()
@@ -68,7 +71,7 @@ def render_sensor_types_view():
                         if b_salvar.form_submit_button("💾 Salvar"):
                             try:
                                 payload = {"name": e_name, "unit": e_unit, "description": e_desc}
-                                r = requests.patch(f"{API_URL}/sensor-types/{s['id']}", json=payload)
+                                r = requests.patch(f"{API_URL}/sensor-types/{s['id']}", json=payload, headers=headers)
                                 if r.status_code == 200:
                                     st.success("Atualizado!")
                                     st.session_state["editing_sensor_id"] = None
@@ -102,7 +105,7 @@ def render_sensor_types_view():
                 if is_active:
                     if b_del.button("⛔", key=f"btn_arch_{s['id']}", help="Arquivar (Desativar)"):
                         try:
-                            r = requests.delete(f"{API_URL}/sensor-types/{s['id']}")
+                            r = requests.delete(f"{API_URL}/sensor-types/{s['id']}", headers=headers)
                             if r.status_code == 200:
                                 st.toast(f"Sensor '{s['name']}' arquivado!")
                                 st.rerun()

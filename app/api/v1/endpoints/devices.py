@@ -9,6 +9,9 @@ from app.core.database import get_session
 from app.models.device import Device
 from app.schemas.device import DeviceCreate, DevicePublic, DeviceUpdate
 
+from app.api.v1 import deps
+from app.models.user import User
+
 from app.models.device_sensor import DeviceSensorLink
 from app.models.sensor_type import SensorType         
 from app.schemas.device import DeviceSensorsUpdate    
@@ -18,7 +21,8 @@ router = APIRouter()
 @router.post("/", response_model=DevicePublic)
 async def create_device(
     device: DeviceCreate, 
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(deps.get_current_active_superuser)
 ):
     query = select(Device).where(Device.slug == device.slug)
     result = await session.exec(query)
@@ -69,7 +73,7 @@ async def read_devices(
 @router.get("/{device_id}", response_model=DevicePublic)
 async def read_device(
     device_id: int, 
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
 ):
     db_device = await session.get(Device, device_id)
     if not db_device:
@@ -80,7 +84,8 @@ async def read_device(
 async def update_device(
     device_id: int, 
     device_in: DeviceUpdate, 
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(deps.get_current_active_superuser)
 ):
     db_device = await session.get(Device, device_id)
     if not db_device:
@@ -98,7 +103,8 @@ async def update_device(
 @router.delete("/{device_id}")
 async def delete_device(
     device_id: int, 
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(deps.get_current_active_superuser)
 ):
     db_device = await session.get(Device, device_id)
     if not db_device:
@@ -112,7 +118,8 @@ async def delete_device(
 async def update_device_sensors(
     device_id: int,
     payload: DeviceSensorsUpdate,
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(deps.get_current_active_superuser)
 ):
     """
     Atualiza a lista de sensores vinculados a um dispositivo.

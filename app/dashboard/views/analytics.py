@@ -8,6 +8,11 @@ from app.dashboard.utils import API_URL, carregar_mapa_sensores, converter_para_
 def render_analytics_view():
     st.title("📊 Análise Inteligente de Dados")
     
+    # --- PREPARAÇÃO DE SEGURANÇA ---
+    # Recupera o token para usar nas chamadas de API
+    token = st.session_state.get("token")
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+
     # --- BARRA DE CONFIGURAÇÃO ---
     with st.expander("⚙️ Configuração da Análise", expanded=True):
         c1, c2, c3 = st.columns([2, 2, 1])
@@ -27,20 +32,32 @@ def render_analytics_view():
                 format_func=lambda x: {"minute":"Minuto a Minuto", "hour":"Hora em Hora", "day":"Diário"}[x]
             )
         with c3:
-            st.write(""); st.write("") # Espaçamento
+            st.write(""); st.write("") # Espaçamento para alinhar o botão
             btn_update = st.button("🔄 Gerar Relatório", type="primary", use_container_width=True)
 
     # --- PROCESSAMENTO ---
     if btn_update:
         try:
-            # Busca metadados (para não mostrar IDs crus)
+            # Busca metadados dos sensores (GET público ou protegido)
+            # Nota: Se o GET /sensor-types for protegido, carregar_mapa_sensores precisaria ser atualizado em utils.py
             sensor_map = carregar_mapa_sensores()
             
             # Busca dados analíticos do backend
             params = {"period": periodo, "bucket_size": bucket}
-            with st.spinner("Processando estatísticas..."):
-                res = requests.get(f"{API_URL}/measurements/analytics/", params=params)
             
+            with st.spinner("Processando estatísticas..."):
+                # INJEÇÃO DO TOKEN AQUI
+                res = requests.get(
+                    f"{API_URL}/measurements/analytics/", 
+                    params=params, 
+                    headers=headers # <--- Autenticação
+                )
+            
+            # Tratamento de Erros de Autenticação
+            if res.status_code == 401:
+                st.error("🔒 Sessão expirada. Faça login novamente.")
+                return
+
             if res.status_code == 200:
                 data = res.json()
                 if not data:
@@ -51,7 +68,9 @@ def render_analytics_view():
                 rows = []
                 for item in data:
                     s_id = item['sensor_type_id']
+                    # Usa o mapa para pegar nome amigável ou fallback para o ID
                     info = sensor_map.get(s_id, {'name': f"Sensor {s_id}", 'unit': ''})
+                    
                     dt_local = converter_para_local(item['bucket'])
                     
                     rows.append({
@@ -70,57 +89,63 @@ def render_analytics_view():
                 st.divider()
                 st.subheader("🧠 Insights por Tipo de Sensor")
                 
-                sensores_unicos = df['Sensor'].unique()
-                
-                # Lógica de Grid (2 cards por linha para ficarem largos e legíveis)
-                cols_per_row = 2
-                rows_count = math.ceil(len(sensores_unicos) / cols_per_row)
+                if 'Sensor' in df.columns:
+                    sensores_unicos = df['Sensor'].unique()
+                    
+                    # Lógica de Grid Responsivo (2 cards por linha)
+                    cols_per_row = 2
+                    rows_count = math.ceil(len(sensores_unicos) / cols_per_row)
 
-                for r in range(rows_count):
-                    cols = st.columns(cols_per_row)
-                    for c in range(cols_per_row):
-                        idx = r * cols_per_row + c
-                        
-                        if idx < len(sensores_unicos):
-                            sensor_nome = sensores_unicos[idx]
+                    for r in range(rows_count):
+                        cols = st.columns(cols_per_row)
+                        for c in range(cols_per_row):
+                            idx = r * cols_per_row + c
                             
-                            # Filtra dados APENAS deste sensor
-                            df_s = df[df['Sensor'] == sensor_nome].sort_values("Data")
-                            unidade = df_s.iloc[0]['Unidade']
-                            
-                            # Estatísticas do Período
-                            avg_total = df_s['Média'].mean()
-                            min_total = df_s['Mínima'].min()
-                            max_total = df_s['Máxima'].max()
-                            
-                            with cols[c]:
-                                with st.container(border=True):
-                                    # Cabeçalho do Card
-                                    st.markdown(f"### 📡 {sensor_nome}")
-                                    
-                                    # KPIs Principais
-                                    k1, k2, k3 = st.columns(3)
-                                    k1.metric("Média", f"{avg_total:.1f} {unidade}")
-                                    k2.metric("Mínima", f"{min_total:.1f} {unidade}")
-                                    k3.metric("Máxima", f"{max_total:.1f} {unidade}")
-                                    
-                                    st.divider()
-                                    
-                                    base = alt.Chart(df_s).encode(
-                                        x=alt.X('Data', title=None, axis=alt.Axis(format='%H:%M'))
-                                    )
-                                    
-                                    line = base.mark_line(color='#4E8CFF').encode(
-                                        y=alt.Y('Média', title=f"Valor ({unidade})", scale=alt.Scale(zero=False)),
-                                        tooltip=['Data', 'Média', 'Mínima', 'Máxima', 'Amostras']
-                                    )
-                                    
-                                    band = base.mark_area(opacity=0.3, color='#4E8CFF').encode(
-                                        y='Mínima',
-                                        y2='Máxima'
-                                    )
-                                    
-                                    st.altair_chart((band + line).interactive(), use_container_width=True)
+                            if idx < len(sensores_unicos):
+                                sensor_nome = sensores_unicos[idx]
+                                
+                                # Filtra dados APENAS deste sensor
+                                df_s = df[df['Sensor'] == sensor_nome].sort_values("Data")
+                                unidade = df_s.iloc[0]['Unidade']
+                                
+                                # Estatísticas Gerais do Período
+                                avg_total = df_s['Média'].mean()
+                                min_total = df_s['Mínima'].min()
+                                max_total = df_s['Máxima'].max()
+                                
+                                with cols[c]:
+                                    with st.container(border=True):
+                                        # Cabeçalho do Card
+                                        st.markdown(f"### 📡 {sensor_nome}")
+                                        
+                                        # KPIs Principais
+                                        k1, k2, k3 = st.columns(3)
+                                        k1.metric("Média Global", f"{avg_total:.1f} {unidade}")
+                                        k2.metric("Mínima Abs", f"{min_total:.1f} {unidade}")
+                                        k3.metric("Máxima Abs", f"{max_total:.1f} {unidade}")
+                                        
+                                        st.divider()
+                                        
+                                        # Gráfico de Área (Min-Max) com Linha de Média
+                                        base = alt.Chart(df_s).encode(
+                                            x=alt.X('Data', title=None, axis=alt.Axis(format='%H:%M'))
+                                        )
+                                        
+                                        # Linha da Média
+                                        line = base.mark_line(color='#4E8CFF').encode(
+                                            y=alt.Y('Média', title=f"Valor ({unidade})", scale=alt.Scale(zero=False)),
+                                            tooltip=['Data', 'Média', 'Mínima', 'Máxima', 'Amostras']
+                                        )
+                                        
+                                        # Faixa de Variação (Min até Max)
+                                        band = base.mark_area(opacity=0.3, color='#4E8CFF').encode(
+                                            y='Mínima',
+                                            y2='Máxima'
+                                        )
+                                        
+                                        st.altair_chart((band + line).interactive(), use_container_width=True)
+                else:
+                    st.error("Erro na estrutura dos dados recebidos.")
 
             else:
                 st.error(f"Erro ao conectar na API: {res.text}")

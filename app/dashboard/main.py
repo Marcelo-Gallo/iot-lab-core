@@ -1,43 +1,61 @@
-import sys
-import os
-import time
 import streamlit as st
+import requests
+from app.dashboard.utils import API_URL
+from app.dashboard.views import sensor_types, devices, live, analytics
 
-current_dir = os.path.dirname(os.path.abspath(__file__))
-root_dir = os.path.abspath(os.path.join(current_dir, "../.."))
-if root_dir not in sys.path:
-    sys.path.append(root_dir)
+st.set_page_config(page_title="IoT Lab Dashboard", layout="wide")
 
-# Imports das Views
-from app.dashboard.views.live import render_live_view
-from app.dashboard.views.analytics import render_analytics_view
-from app.dashboard.views.devices import render_devices_view
-from app.dashboard.views.sensor_types import render_sensor_types_view
+if "token" not in st.session_state:
+    st.session_state["token"] = None
 
-# Configuração da Página
-st.set_page_config(page_title="IoT Lab Core", layout="wide")
+def login_page():
+    st.title("🔐 IoT Lab - Acesso Restrito")
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        with st.form("login_form"):
+            username = st.text_input("Usuário")
+            password = st.text_input("Senha", type="password")
+            submit = st.form_submit_button("Entrar")
+            
+            if submit:
+                try:
+                    response = requests.post(
+                        f"{API_URL}/login/access-token",
+                        data={"username": username, "password": password} # OAuth2 usa form data
+                    )
+                    
+                    if response.status_code == 200:
+                        token_data = response.json()
+                        st.session_state["token"] = token_data["access_token"]
+                        st.success("Login realizado!")
+                        st.rerun()
+                    else:
+                        st.error("Usuário ou senha incorretos.")
+                except Exception as e:
+                    st.error(f"Erro de conexão: {e}")
 
-# Sidebar
-st.sidebar.title("🔌 IoT Lab Core")
-st.sidebar.markdown("---")
+def main_app():
+    with st.sidebar:
+        st.write(f"Logado como Admin")
+        if st.button("Sair / Logout"):
+            st.session_state["token"] = None
+            st.rerun()
+        st.divider()
+    
+    st.sidebar.title("Navegação")
+    page = st.sidebar.radio("Ir para:", ["Tempo Real", "Analítico", "Dispositivos", "Tipos de Sensor"])
 
-menu_options = {
-    "Monitoramento (Live)": render_live_view,
-    "Histórico (Analytics)": render_analytics_view,
-    "Gerenciamento (CRUD)": render_devices_view,
-    "Catálogo de Sensores": render_sensor_types_view,
-}
+    if page == "Tempo Real":
+        live.render_live_dashboard()
+    elif page == "Analítico":
+        analytics.render_analytics_view()
+    elif page == "Dispositivos":
+        devices.render_devices_view()
+    elif page == "Tipos de Sensor":
+        sensor_types.render_sensor_types_view()
 
-choice = st.sidebar.radio("Navegação", list(menu_options.keys()))
-st.sidebar.markdown("---")
-st.sidebar.info("Sistema v3.2 | Modular Architecture")
-
-root_container = st.empty()
-
-root_container.empty()
-
-time.sleep(0.05)
-
-with root_container.container():
-    if choice in menu_options:
-        menu_options[choice]()
+if st.session_state["token"]:
+    main_app()
+else:
+    login_page()

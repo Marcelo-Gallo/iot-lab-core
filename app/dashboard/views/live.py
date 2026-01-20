@@ -23,7 +23,6 @@ def inject_custom_css():
     </style>
     """, unsafe_allow_html=True)
 
-# --- HELPER: CRIAR SPARKLINE COM EIXO Y ---
 def make_sparkline(data_list, color_hex="#4E8CFF"):
     """
     Gera um gráfico miniatura, mas COM Eixo Y para contexto de escala.
@@ -68,11 +67,17 @@ def make_sparkline(data_list, color_hex="#4E8CFF"):
     return chart
 
 def get_devices_map():
+    """Busca dispositivos. Adiciona Token se disponível."""
+    headers = {}
+    if "token" in st.session_state and st.session_state["token"]:
+        headers["Authorization"] = f"Bearer {st.session_state['token']}"
+
     try:
-        resp = requests.get(f"{API_URL}/devices/")
+        resp = requests.get(f"{API_URL}/devices/", headers=headers)
         if resp.status_code == 200:
             return {d['id']: d for d in resp.json()}
-    except: pass
+    except: 
+        pass
     return {}
 
 # --- CORE DO DASHBOARD ---
@@ -84,10 +89,10 @@ async def run_live_dashboard(main_placeholder, location_filter):
     inject_custom_css()
     
     if not device_map:
-        main_placeholder.warning("Nenhum dispositivo encontrado.")
+        main_placeholder.warning("Nenhum dispositivo encontrado ou erro de conexão.")
         return
 
-    # Inicializa Estado
+    # Inicializa Estado do Grid se não existir
     if "live_grid" not in st.session_state:
         st.session_state.live_grid = {}
 
@@ -102,11 +107,11 @@ async def run_live_dashboard(main_placeholder, location_filter):
                 val = data['value']
                 dt = converter_para_local(data['created_at'])
                 
-                # Inicializa Device
+                # Inicializa Device no Estado
                 if dev_id not in st.session_state.live_grid:
                     st.session_state.live_grid[dev_id] = {'sensors': {}, 'last_seen': None}
                 
-                # Inicializa Sensor
+                # Inicializa Sensor no Estado
                 if sens_id not in st.session_state.live_grid[dev_id]['sensors']:
                     st.session_state.live_grid[dev_id]['sensors'][sens_id] = {
                         'value': val, 
@@ -132,6 +137,7 @@ async def run_live_dashboard(main_placeholder, location_filter):
                 # --- RENDERIZAÇÃO ---
                 devices_to_show = []
                 for d_id, d_info in device_map.items():
+                    # Filtro de Localização
                     if location_filter != "Todas" and d_info.get('location') != location_filter:
                         continue
                     if d_id in st.session_state.live_grid:
@@ -139,7 +145,7 @@ async def run_live_dashboard(main_placeholder, location_filter):
 
                 with main_placeholder.container():
                     if not devices_to_show:
-                        st.info("Aguardando dados do enxame...")
+                        st.info("Conectado ao servidor. Aguardando dados em tempo real...")
                     else:
                         cols_per_row = 3
                         rows = math.ceil(len(devices_to_show) / cols_per_row)
@@ -154,7 +160,7 @@ async def run_live_dashboard(main_placeholder, location_filter):
                                     d_live = st.session_state.live_grid[d_id]
                                     
                                     with cols[c]:
-                                        with st.container(border=True):
+                                        with st.container(border=True): # O card visual
                                             st.markdown(f"**🤖 {d_meta['name']}**")
                                             st.caption(f"📍 {d_meta.get('location', 'N/A')}")
                                             
@@ -184,19 +190,23 @@ async def run_live_dashboard(main_placeholder, location_filter):
                                                 st.caption(f"⏱️ {last_ts}")
 
     except Exception as e:
-        main_placeholder.error(f"Erro WebSocket: {e}")
+        main_placeholder.error(f"Conexão WebSocket Perdida: {e}")
         if st.button("Reconectar"): st.rerun()
 
-def render_live_view():
-    st.title("⚡ Centro de Comando")
+def render_live_dashboard(): # <--- NOME CORRIGIDO AQUI
+    st.title("⚡ Monitoramento em Tempo Real")
     
     device_map = get_devices_map()
+    
+    # Filtros de Localização
     locations = sorted(list(set(d['location'] for d in device_map.values() if d.get('location'))))
     locations.insert(0, "Todas")
     
     st.sidebar.markdown("### 🕵️ Filtros")
     loc_filter = st.sidebar.selectbox("Localização", locations)
     
-    # Placeholder único para atualização atômica
+    # Placeholder único para atualização atômica do Grid
     main_placeholder = st.empty()
+    
+    # Inicia o loop assíncrono
     asyncio.run(run_live_dashboard(main_placeholder, loc_filter))
