@@ -33,3 +33,44 @@ def carregar_mapa_sensores():
         pass
     # Fallback
     return {1: {'name': "Temperatura", 'unit': "°C"}, 2: {'name': "Umidade", 'unit': "%"}}
+
+def get_device_tokens(device_id: int):
+    """Busca os tokens de um dispositivo específico"""
+    if not st.session_state.get("token"):
+        return []
+        
+    headers = {"Authorization": f"Bearer {st.session_state['token']}"}
+    try:
+        response = requests.get(
+            f"{API_URL}/devices/{device_id}/tokens",
+            headers=headers
+        )
+        if response.status_code == 200:
+            return response.json()
+        return []
+    except Exception as e:
+        st.error(f"Erro de conexão: {e}")
+        return []
+
+def create_device_token(device_id: int, label: str):
+    """Gera um novo token para o dispositivo"""
+    if not st.session_state.get("token"):
+        return None
+        
+    headers = {"Authorization": f"Bearer {st.session_state['token']}"}
+    payload = {"label": label}
+    
+    try:
+        response = requests.post(
+            f"{API_URL}/devices/{device_id}/tokens",
+            json=payload,
+            headers=headers
+        )
+        if response.status_code == 200:
+            return response.json() # Retorna o token completo (com o segredo)
+        else:
+            st.error(f"Erro ao criar token: {response.text}")
+            return None
+    except Exception as e:
+        st.error(f"Erro de conexão: {e}")
+        return None

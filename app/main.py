@@ -8,11 +8,14 @@ from app.core.database import init_db, engine
 from app.core.seed import create_initial_data
 
 # --- IMPORTS DE MODELOS ---
-# Importamos todos para garantir que o SQLModel detecte os metadados
 from app.models.device import Device
 from app.models.sensor_type import SensorType
 from app.models.measurement import Measurement
-from app.models.device_sensor import DeviceSensorLink # <--- ADICIONE ESTA LINHA
+from app.models.device_sensor import DeviceSensorLink
+from app.models.device_token import DeviceToken
+
+# --- IMPORT DO MIDDLEWARE ---
+from app.core.middleware import DeviceAuthMiddleware
 
 # --- LIFESPAN ---
 @asynccontextmanager
@@ -35,6 +38,8 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+app.add_middleware(DeviceAuthMiddleware)
 
 @app.get("/")
 async def root():
