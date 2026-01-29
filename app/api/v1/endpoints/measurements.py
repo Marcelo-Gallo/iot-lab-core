@@ -12,6 +12,7 @@ from app.models.device import Device
 from app.models.device_sensor import DeviceSensorLink
 from app.models.sensor_type import SensorType
 from app.schemas.measurement import MeasurementCreate, MeasurementPublic, MeasurementAnalytics
+from app.core.calibration import safe_eval
 
 router = APIRouter()
 
@@ -20,40 +21,49 @@ async def create_measurement(
     measurement_in: MeasurementCreate, 
     session: AsyncSession = Depends(get_session)
 ):
-    # Busca o dispositivo no banco para ver o status
+    # Validações de Dispositivo (Existência e Ativo)
     device = await session.get(Device, measurement_in.device_id)
-    # Existe?
     if not device:
         raise HTTPException(status_code=404, detail="Dispositivo não encontrado.")
-    # Está Ativo?
     if not device.is_active:
-        raise HTTPException(status_code=403, detail="Dispositivo inativo. Medição rejeitada.")
-    # Tem permissão para esse sensor?
+        raise HTTPException(status_code=403, detail="Dispositivo inativo.")
+
+    # Busca o Vínculo e a FÓRMULA DE CALIBRAÇÃO
     query_link = select(DeviceSensorLink).where(
         DeviceSensorLink.device_id == measurement_in.device_id,
         DeviceSensorLink.sensor_type_id == measurement_in.sensor_type_id
     )
     link_result = await session.exec(query_link)
-    if not link_result.first():
+    link = link_result.first()
+    
+    if not link:
          raise HTTPException(
              status_code=400, 
-             detail=f"Este dispositivo não possui o sensor ID {measurement_in.sensor_type_id} vinculado."
+             detail=f"Sensor {measurement_in.sensor_type_id} não vinculado ao dispositivo."
          )
     
+    # Valida Tipo de Sensor
     sensor_type = await session.get(SensorType, measurement_in.sensor_type_id)
-    if not sensor_type:
-        raise HTTPException(status_code=404, detail="Tipo de sensor não encontrado.")
-    
-    if not sensor_type.is_active:
-        raise HTTPException(status_code=400, detail="Medição rejeitada: Este tipo de sensor está arquivado.")
+    if not sensor_type or not sensor_type.is_active:
+        raise HTTPException(status_code=400, detail="Tipo de sensor inválido.")
 
-    # GRAVAÇÃO
-    db_measurement = Measurement.model_validate(measurement_in)
+    # Se houver fórmula, processa. Se não, usa o valor bruto.
+    final_value = measurement_in.value
+    if link.calibration_formula:
+        final_value = safe_eval(link.calibration_formula, measurement_in.value)
+    
+    # Gravação (Com o valor calibrado)
+    db_measurement = Measurement(
+        device_id=measurement_in.device_id,
+        sensor_type_id=measurement_in.sensor_type_id,
+        value=final_value
+    )
+    
     session.add(db_measurement)
     await session.commit()
     await session.refresh(db_measurement)
 
-    #BROADCAST (WebSocket)
+    # Broadcast WebSocket
     payload = {
         "id": db_measurement.id,
         "device_id": db_measurement.device_id,
@@ -61,8 +71,8 @@ async def create_measurement(
         "value": db_measurement.value,
         "created_at": db_measurement.created_at.isoformat()
     }
-    
     await manager.broadcast(payload)
+    
     return db_measurement
 
 @router.get("/", response_model=list[MeasurementPublic])
@@ -128,7 +138,7 @@ async def get_analytics(
         return analytics_data
 
     except Exception as e:
-        print(f"❌ ERRO CRÍTICO NO ANALYTICS: {e}")
+        print(f"ERRO CRÍTICO NO ANALYTICS: {e}")
         raise HTTPException(status_code=500, detail="Erro interno.")
 
 @router.websocket("/ws")

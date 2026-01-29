@@ -15,7 +15,7 @@ from app.models.device_sensor import DeviceSensorLink
 from app.models.device_token import DeviceToken
 
 # --- IMPORT DO MIDDLEWARE ---
-from app.core.middleware import DeviceAuthMiddleware
+from app.core.middleware import DeviceAuthMiddleware     
 
 # --- LIFESPAN ---
 @asynccontextmanager

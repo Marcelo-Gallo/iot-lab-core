@@ -17,6 +17,7 @@ class Device(SQLModel, table=True):
     description: Optional[str] = None
     is_active: bool = Field(default=True)
     deleted_at: Optional[datetime] = Field(default=None)
+    is_battery_powered: bool = Field(default = False)
 
     sensors: List["SensorType"] = Relationship(
         back_populates="devices", 

@@ -26,7 +26,7 @@ class DeviceBot:
         self.device_id = device_id
         self.name = name
         self.sensor_map = sensor_map 
-        self.token = token # <--- A Chave de Acesso
+        self.token = token 
         self.is_running = True
 
     async def run(self, client: httpx.AsyncClient):
