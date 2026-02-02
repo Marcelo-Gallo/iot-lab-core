@@ -7,7 +7,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import get_session
 from app.models.device import Device
-from app.schemas.device import DeviceCreate, DevicePublic, DeviceUpdate
+from app.schemas.device import DeviceCreate, DevicePublic, DeviceUpdate, DeviceSensorCalibration
 
 from app.models.device_token import DeviceToken 
 from app.schemas.device_token import DeviceTokenCreate, DeviceTokenPublic
@@ -17,7 +17,7 @@ from app.models.user import User
 
 from app.models.device_sensor import DeviceSensorLink
 from app.models.sensor_type import SensorType         
-from app.schemas.device import DeviceSensorsUpdate    
+from app.schemas.device import DeviceSensorsUpdate 
 
 router = APIRouter()
 
@@ -49,7 +49,7 @@ async def create_device(
     query_refresh = (
         select(Device)
         .where(Device.id == db_device.id)
-        .options(selectinload(Device.sensors)) # <--- A Mágica do Async
+        .options(selectinload(Device.sensors))
     )
     result = await session.exec(query_refresh)
     device_ready = result.one()
@@ -215,3 +215,39 @@ async def list_device_tokens(
     query = select(DeviceToken).where(DeviceToken.device_id == device_id)
     result = await session.exec(query)
     return result.all()
+
+@router.put("/{device_id}/sensors/{sensor_id}/calibration", response_model=dict)
+async def update_sensor_calibration(
+    device_id: int,
+    sensor_id: int,
+    payload: DeviceSensorCalibration,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(deps.get_current_active_superuser)
+):
+    """
+    Atualiza a fórmula de calibração de um sensor específico num dispositivo.
+    """
+    link = await session.get(DeviceSensorLink, (device_id, sensor_id))
+    
+    if not link:
+        raise HTTPException(
+            status_code=404, 
+            detail="Vínculo entre dispositivo e sensor não encontrado."
+        )
+
+    link.calibration_formula = payload.calibration_formula
+    session.add(link)
+    await session.commit()
+    
+    return {"status": "ok", "formula": link.calibration_formula}
+
+@router.get("/{device_id}/sensors/{sensor_id}/calibration", response_model=dict)
+async def get_sensor_calibration(
+    device_id: int,
+    sensor_id: int,
+    session: AsyncSession = Depends(get_session)
+):
+    link = await session.get(DeviceSensorLink, (device_id, sensor_id))
+    if not link:
+        raise HTTPException(status_code=404, detail="Link não encontrado")
+    return {"formula": link.calibration_formula}
