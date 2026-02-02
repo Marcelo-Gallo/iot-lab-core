@@ -10,3 +10,5 @@ class DeviceSensorLink(SQLModel, table=True):
     sensor_type_id: Optional[int] = Field(
         default=None, foreign_key="sensor_types.id", primary_key=True
     )
+    
+    calibration_formula: Optional[str] = Field(default=None)
