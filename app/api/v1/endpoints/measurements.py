@@ -12,66 +12,53 @@ from app.models.device import Device
 from app.models.device_sensor import DeviceSensorLink
 from app.models.sensor_type import SensorType
 from app.schemas.measurement import MeasurementCreate, MeasurementPublic, MeasurementAnalytics
+from app.api.v1.deps import get_current_device
 from app.core.calibration import safe_eval
 
 router = APIRouter()
 
 @router.post("/", response_model=MeasurementPublic)
 async def create_measurement(
-    measurement_in: MeasurementCreate, 
-    session: AsyncSession = Depends(get_session)
+    payload: MeasurementPayload,
+    session: AsyncSession = Depends(get_session),
+    device: Device = Depends(get_current_device)
 ):
-    # Validações de Dispositivo (Existência e Ativo)
-    device = await session.get(Device, measurement_in.device_id)
-    if not device:
-        raise HTTPException(status_code=404, detail="Dispositivo não encontrado.")
-    if not device.is_active:
-        raise HTTPException(status_code=403, detail="Dispositivo inativo.")
-
-    # Busca o Vínculo e a FÓRMULA DE CALIBRAÇÃO
+    
+    if payload.sensor_type_id not in valid_sensor_ids:
+         raise HTTPException(
+             status_code=400, 
+             detail=f"Sensor {payload.sensor_type_id} não está vinculado a este dispositivo."
+         )
+    
     query_link = select(DeviceSensorLink).where(
-        DeviceSensorLink.device_id == measurement_in.device_id,
-        DeviceSensorLink.sensor_type_id == measurement_in.sensor_type_id
+        DeviceSensorLink.device_id == device.id,
+        DeviceSensorLink.sensor_type_id == payload.sensor_type_id
     )
     link_result = await session.exec(query_link)
     link = link_result.first()
-    
-    if not link:
-         raise HTTPException(
-             status_code=400, 
-             detail=f"Sensor {measurement_in.sensor_type_id} não vinculado ao dispositivo."
-         )
-    
-    # Valida Tipo de Sensor
-    sensor_type = await session.get(SensorType, measurement_in.sensor_type_id)
-    if not sensor_type or not sensor_type.is_active:
-        raise HTTPException(status_code=400, detail="Tipo de sensor inválido.")
 
-    # Se houver fórmula, processa. Se não, usa o valor bruto.
-    final_value = measurement_in.value
-    if link.calibration_formula:
-        final_value = safe_eval(link.calibration_formula, measurement_in.value)
+    final_value = payload.value
+    if link and link.calibration_formula:
+        final_value = safe_eval(link.calibration_formula, payload.value)
     
-    # Gravação (Com o valor calibrado)
     db_measurement = Measurement(
-        device_id=measurement_in.device_id,
-        sensor_type_id=measurement_in.sensor_type_id,
-        value=final_value
+        device_id=device.id, 
+        sensor_type_id=payload.sensor_type_id,
+        value=final_value,
+        created_at=payload.timestamp if payload.timestamp else datetime.utcnow()
     )
     
     session.add(db_measurement)
     await session.commit()
     await session.refresh(db_measurement)
 
-    # Broadcast WebSocket
-    payload = {
+    await manager.broadcast({
         "id": db_measurement.id,
         "device_id": db_measurement.device_id,
         "sensor_type_id": db_measurement.sensor_type_id,
         "value": db_measurement.value,
         "created_at": db_measurement.created_at.isoformat()
-    }
-    await manager.broadcast(payload)
+    })
     
     return db_measurement
 

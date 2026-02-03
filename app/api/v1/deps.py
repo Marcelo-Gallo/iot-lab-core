@@ -1,22 +1,58 @@
 from typing import Generator, Annotated
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Header
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from pydantic import ValidationError
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from sqlalchemy.orm import selectinload
+
 from app.core import security
 from app.core.config import settings
 from app.core.database import get_session
 from app.models.user import User
 from app.schemas.token import TokenPayload
+from app.models.device_token import DeviceToken
+from app.models.device import Device
 
-# Diz ao FastAPI que o token vem do header "Authorization: Bearer ..."
-# e que a url para obter o token é a que criamos antes.
 reusable_oauth2 = OAuth2PasswordBearer(
     tokenUrl=f"{settings.API_V1_STR}/login/access-token"
 )
+
+async def get_current_device(
+    x_device_token: str = Header(..., alias="X-Device-Token"), # Captura o Header
+    session: AsyncSession = Depends(get_session)
+) -> Device:
+    """
+    Valida o Token do Header e retorna o Dispositivo correspondente.
+    Se falhar, retorna 401.
+    """
+    query = select(DeviceToken).where(DeviceToken.token == x_device_token)
+    result = await session.exec(query)
+    db_token = result.first()
+
+    if not db_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token de dispositivo inválido.",
+        )
+
+    query_device = (
+        select(Device)
+        .where(Device.id == db_token.device_id)
+        .options(selectinload(Device.sensors))
+    )
+    result_device = await session.exec(query_device)
+    device = result_device.first()
+
+    if not device or not device.is_active:
+         raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Dispositivo inativo ou não encontrado.",
+        )
+
+    return device
 
 async def get_current_user(
     session: AsyncSession = Depends(get_session),

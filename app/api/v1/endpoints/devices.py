@@ -78,9 +78,18 @@ async def read_device(
     device_id: int, 
     session: AsyncSession = Depends(get_session),
 ):
-    db_device = await session.get(Device, device_id)
+    query = (
+        select(Device)
+        .where(Device.id == device_id)
+        .options(selectinload(Device.sensors)) 
+    )
+    
+    result = await session.exec(query)
+    db_device = result.first()
+
     if not db_device:
         raise HTTPException(status_code=404, detail="Dispositivo não encontrado")
+    
     return db_device
 
 @router.patch("/{device_id}", response_model=DevicePublic)

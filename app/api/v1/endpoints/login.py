@@ -35,7 +35,7 @@ async def login_access_token(
     if not user.is_active:
         raise HTTPException(status_code=400, detail="Usuário inativo")
 
-    # 3. Gera o Token com validade
+    # Gera o Token com validade
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     
     return {
