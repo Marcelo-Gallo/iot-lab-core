@@ -40,6 +40,8 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+app.add_middleware(DeviceAuthMiddleware)
+
 # --- CONFIGURAÇÃO DE CORS ---
 origins = [
     "http://localhost:5173", # Vite Dev Server Padrão
@@ -54,8 +56,6 @@ app.add_middleware(
     allow_methods=["*"],   # Permite GET, POST, PUT, DELETE, etc.
     allow_headers=["*"],   # Permite Authorization, Content-Type, etc.
 )
-
-app.add_middleware(DeviceAuthMiddleware)
 
 @app.get("/")
 async def root():

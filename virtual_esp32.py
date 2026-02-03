@@ -4,7 +4,7 @@ import random
 from datetime import datetime, timezone
 
 # ================= CONFIGURAÇÃO =================
-DEVICE_TOKEN = "SEU_TOKEN_AQUI" 
+DEVICE_TOKEN = "sk_iot_zkPAWjGzJ-T7P0PFHAZkyQioft2rgoTVvRH2-TwEmKI" 
 SENSORS = [
     {"id": 1, "min": 20.0, "max": 30.0, "name": "Temperatura"},
     {"id": 2, "min": 40.0, "max": 60.0, "name": "Umidade"}

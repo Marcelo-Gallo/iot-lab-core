@@ -11,7 +11,7 @@ from app.models.measurement import Measurement
 from app.models.device import Device
 from app.models.device_sensor import DeviceSensorLink
 from app.models.sensor_type import SensorType
-from app.schemas.measurement import MeasurementCreate, MeasurementPublic, MeasurementAnalytics
+from app.schemas.measurement import MeasurementPublic, MeasurementAnalytics, MeasurementPayload
 from app.api.v1.deps import get_current_device
 from app.core.calibration import safe_eval
 
@@ -68,12 +68,18 @@ async def read_measurements(
     skip: int = 0,
     limit: int = 100,
     start_date: Optional[datetime] = None, 
-    end_date: Optional[datetime] = None   
+    end_date: Optional[datetime] = None,
+    device_id: Optional[int] = None
 ):
     query = select(Measurement)
-    if start_date: query = query.where(Measurement.created_at >= start_date)
-    if end_date: query = query.where(Measurement.created_at <= end_date)
+    
+    if device_id:
+        query = query.where(Measurement.device_id == device_id)
         
+    if start_date: 
+        query = query.where(Measurement.created_at >= start_date)
+    if end_date: 
+        query = query.where(Measurement.created_at <= end_date)
     query = query.order_by(Measurement.created_at.desc()).offset(skip).limit(limit)
     
     result = await session.exec(query)

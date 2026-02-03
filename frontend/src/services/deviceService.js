@@ -4,7 +4,6 @@ export const deviceService = {
   // Busca todos os dispositivos cadastrados
   getAll: async () => {
     try {
-      // Ajuste a rota conforme seu backend (api/v1/devices/)
       const response = await api.get('/devices/');
       return response.data;
     } catch (error) {
