@@ -7,6 +7,7 @@ if TYPE_CHECKING:
     from app.models.device_token import DeviceToken
     from app.models.measurement import Measurement
     from app.models.sensor_type import SensorType
+    from app.models.organization import Organization
 
 from app.models.device_sensor import DeviceSensorLink
 
@@ -30,6 +31,9 @@ class Device(DeviceBase, table=True):
     last_seen: Optional[datetime] = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    organization_id: Optional[int] = Field(default=None, foreign_key="organization.id")
+    organization: Optional["Organization"] = Relationship(back_populates="devices")
 
     # Relacionamentos
     tokens: List["DeviceToken"] = Relationship(back_populates="device")

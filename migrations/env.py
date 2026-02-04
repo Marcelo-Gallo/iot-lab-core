@@ -7,24 +7,21 @@ from sqlmodel import SQLModel
 
 from alembic import context
 
-# 1. Importar a Configuração do Projeto
 from app.core.config import settings
 
-# 2. Importar TODOS os modelos para que o Alembic "enxergue" as tabelas.
 from app.models.device import Device
 from app.models.sensor_type import SensorType
 from app.models.measurement import Measurement
 from app.models.user import User
 from app.models.device_sensor import DeviceSensorLink
-from app.models.device_token import DeviceToken  # Novo modelo de Tokens
+from app.models.device_token import DeviceToken
+from app.models.organization import Organization
 
-# --- Configuração Padrão do Alembic ---
 config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Define o alvo para o 'autogenerate'
 target_metadata = SQLModel.metadata
 
 def run_migrations_offline() -> None:
