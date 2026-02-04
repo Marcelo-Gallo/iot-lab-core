@@ -21,7 +21,7 @@ reusable_oauth2 = OAuth2PasswordBearer(
 )
 
 async def get_current_device(
-    x_device_token: str = Header(..., alias="X-Device-Token"), # Captura o Header
+    x_device_token: str = Header(..., alias="X-Device-Token"),
     session: AsyncSession = Depends(get_session)
 ) -> Device:
     """
@@ -80,7 +80,16 @@ async def get_current_user(
         
     return user
 
-# Atalho para rotas que exigem Superusuário (Admin)
+# --- CORREÇÃO: Adicionada a função que faltava ---
+async def get_current_active_user(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """
+    Retorna o usuário atual se ele estiver ativo.
+    (Redundante com get_current_user, mas mantém consistência de nomenclatura)
+    """
+    return current_user
+
 async def get_current_active_superuser(
     current_user: User = Depends(get_current_user),
 ) -> User:

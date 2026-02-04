@@ -4,6 +4,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from typing import List
 from sqlalchemy import desc
 from sqlalchemy.orm import selectinload
+from datetime import datetime, timezone
 
 from app.core.database import get_session
 from app.models.device import Device
@@ -56,20 +57,15 @@ async def create_device(
     
     return device_ready
 
-@router.get("/", response_model=List[DevicePublic])
+@router.get("/", response_model=List[Device])
 async def read_devices(
-    session: AsyncSession = Depends(get_session),
     skip: int = 0,
     limit: int = 100,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(deps.get_current_active_superuser),
 ):
-    query = (
-        select(Device)
-        .where(Device.deleted_at == None)
-        .options(selectinload(Device.sensors))
-        .order_by(Device.id.desc())
-        .offset(skip)
-        .limit(limit)
-    )
+    query = select(Device).order_by(Device.id.desc()).offset(skip).limit(limit)
+    
     result = await session.exec(query)
     return result.all()
 
@@ -122,7 +118,10 @@ async def delete_device(
     if not db_device:
         raise HTTPException(status_code=404, detail="Dispositivo não encontrado")
     
-    await session.delete(db_device)
+    db_device.deleted_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    db_device.is_active = False
+    
+    session.add(db_device)
     await session.commit()
     return {"ok": True}
 
@@ -260,3 +259,20 @@ async def get_sensor_calibration(
     if not link:
         raise HTTPException(status_code=404, detail="Link não encontrado")
     return {"formula": link.calibration_formula}
+
+@router.post("/{device_id}/restore")
+async def restore_device(
+    device_id: int, 
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(deps.get_current_active_superuser)
+):
+    db_device = await session.get(Device, device_id)
+    if not db_device:
+        raise HTTPException(status_code=404, detail="Dispositivo não encontrado")
+    
+    db_device.deleted_at = None
+    db_device.is_active = True
+    
+    session.add(db_device)
+    await session.commit()
+    return {"ok": True}

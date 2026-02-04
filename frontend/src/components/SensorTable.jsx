@@ -1,11 +1,11 @@
 import { useNavigate } from 'react-router-dom';
 
-export default function DeviceTable({ devices, onDelete, onRestore }) {
+export default function SensorTable({ sensors, onDelete, onRestore }) {
     const navigate = useNavigate();
-    
-    // Ícones (SVG Nativo)
-    const EyeIcon = () => (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+
+    // Ícones SVG
+    const PencilIcon = () => (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
     );
     
     const TrashIcon = () => (
@@ -16,31 +16,23 @@ export default function DeviceTable({ devices, onDelete, onRestore }) {
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>
     );
 
-    if (!devices || devices.length === 0) {
+    if (!sensors || sensors.length === 0) {
         return (
             <div className="text-center p-8 bg-white rounded-lg border border-gray-200 text-gray-500">
-                Nenhum dispositivo encontrado.
+                Nenhum tipo de sensor cadastrado.
             </div>
         );
     }
 
-    // Função auxiliar para definir o estilo e texto do Status
-    const getStatusBadge = (device) => {
-        if (device.deleted_at) {
-            return (
-                <span className="px-2 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-500 border border-gray-200">
-                    ARQUIVADO
-                </span>
-            );
+    const getStatusBadge = (sensor) => {
+        if (sensor.deleted_at) {
+            return <span className="px-2 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-500 border border-gray-200">ARQUIVADO</span>;
         }
-        
         return (
             <span className={`px-2 py-1 rounded-full text-xs font-bold border ${
-                device.is_active 
-                ? 'bg-green-100 text-green-700 border-green-200' 
-                : 'bg-red-100 text-red-700 border-red-200'
+                sensor.is_active ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'
             }`}>
-                {device.is_active ? 'ATIVO' : 'INATIVO'}
+                {sensor.is_active ? 'ATIVO' : 'INATIVO'}
             </span>
         );
     };
@@ -51,48 +43,47 @@ export default function DeviceTable({ devices, onDelete, onRestore }) {
                 <thead>
                     <tr className="bg-gray-50 border-b border-gray-200 text-xs uppercase text-gray-500 font-semibold">
                         <th className="p-4">Nome</th>
-                        <th className="p-4">Localização</th>
+                        <th className="p-4">Unidade</th>
                         <th className="p-4">Status</th>
                         <th className="p-4 text-right">Ações</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                    {devices.map((device) => {
-                        const isArchived = !!device.deleted_at;
-                        
+                    {sensors.map((sensor) => {
+                        const isArchived = !!sensor.deleted_at;
                         return (
-                            <tr key={device.id} className={`transition-colors ${isArchived ? 'bg-gray-50 opacity-60' : 'hover:bg-gray-50'}`}>
+                            <tr key={sensor.id} className={`transition-colors ${isArchived ? 'bg-gray-50 opacity-60' : 'hover:bg-gray-50'}`}>
                                 <td className="p-4 font-medium text-gray-800">
-                                    {device.name}
+                                    {sensor.name}
                                     <br/>
-                                    <span className="text-xs font-normal text-gray-400">@{device.slug}</span>
+                                    <span className="text-xs font-normal text-gray-400">{sensor.description || 'Sem descrição'}</span>
                                 </td>
-                                <td className="p-4 text-gray-600">{device.location || '-'}</td>
-                                <td className="p-4">
-                                    {getStatusBadge(device)}
-                                </td>
+                                <td className="p-4 text-gray-600 font-mono">{sensor.unit}</td>
+                                <td className="p-4">{getStatusBadge(sensor)}</td>
                                 <td className="p-4 text-right flex justify-end space-x-3">
-                                    <button
-                                        onClick={() => navigate(`/devices/${device.id}`)}
+                                    {/* Botão Editar (Apenas placeholder visual por enquanto) */}
+                                    <button 
+                                        onClick={() => console.log('Editar', sensor.id)}
                                         className="text-iot-primary hover:text-blue-800 p-1 rounded hover:bg-blue-50 transition-colors"
-                                        title="Ver Detalhes"
+                                        title="Editar"
+                                        disabled={isArchived}
                                     >
-                                        <EyeIcon />
+                                        <PencilIcon />
                                     </button>
 
                                     {isArchived ? (
                                         <button
-                                            onClick={() => onRestore(device.id)}
+                                            onClick={() => onRestore(sensor.id)}
                                             className="text-green-500 hover:text-green-700 p-1 rounded hover:bg-green-50 transition-colors"
-                                            title="Restaurar Dispositivo"
+                                            title="Restaurar"
                                         >
                                             <RestoreIcon />
                                         </button>
                                     ) : (
                                         <button
-                                            onClick={() => onDelete(device.id)}
+                                            onClick={() => onDelete(sensor.id)}
                                             className="text-red-400 hover:text-red-700 p-1 rounded hover:bg-red-50 transition-colors"
-                                            title="Arquivar Dispositivo"
+                                            title="Arquivar"
                                         >
                                             <TrashIcon />
                                         </button>

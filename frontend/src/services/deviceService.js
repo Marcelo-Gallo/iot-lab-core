@@ -12,12 +12,32 @@ export const deviceService = {
     }
   },
 
+  restore: async (id) => {
+    try {
+      await api.post(`/devices/${id}/restore`);
+      return true;
+    } catch (error) {
+      console.error("Erro ao restaurar dispositivo:", error);
+      throw error;
+    }
+  },
+
   create: async (deviceData) => {
     try {
       const response = await api.post('/devices/', deviceData);
       return response.data;
     } catch (error) {
       console.error("Erro ao criar dispositivo:", error);
+      throw error;
+    }
+  },
+
+  delete: async (id) => {
+    try {
+      await api.delete(`/devices/${id}`); 
+      return true;
+    } catch (error) {
+      console.error("Erro ao excluir dispositivo:", error);
       throw error;
     }
   },
