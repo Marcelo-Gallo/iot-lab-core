@@ -60,12 +60,29 @@ export const deviceService = {
   },
 
   // Atualiza a lista de sensores do dispositivo
-  updateSensors: async (deviceId, sensorIds) => {
-    // O backend espera: { sensor_ids: [1, 2, 3] }
-    const response = await api.post(`/devices/${deviceId}/sensors`, { sensor_ids: sensorIds });
+  // Agora suporta tanto lista de IDs simples quanto objetos com fórmula
+  updateSensors: async (deviceId, sensorIdsOrObjects) => {
+    // ADAPTAÇÃO: O backend novo espera uma lista de objetos:
+    // [{ sensor_type_id: 1, calibration_formula: null }, ...]
+    
+    const payload = sensorIdsOrObjects.map(item => {
+        // Se for número ou string (apenas ID), converte para objeto padrão
+        if (typeof item === 'number' || typeof item === 'string') {
+            return { 
+                sensor_type_id: parseInt(item), 
+                calibration_formula: null 
+            };
+        }
+        // Se já for objeto (do futuro modal de fórmulas), mantém como está
+        return item;
+    });
+
+    // Envia o array diretamente (não envelopado em objeto json)
+    const response = await api.post(`/devices/${deviceId}/sensors`, payload);
     return response.data;
   },
 
   getStats: async () => {
+      // Placeholder para futura implementação
   }
 };

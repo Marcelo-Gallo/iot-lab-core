@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel import select
+from sqlmodel import select, delete
 from sqlmodel.ext.asyncio.session import AsyncSession
 from typing import List
 from sqlalchemy import desc
@@ -18,7 +18,8 @@ from app.models.user import User
 
 from app.models.device_sensor import DeviceSensorLink
 from app.models.sensor_type import SensorType         
-from app.schemas.device import DeviceSensorsUpdate 
+# from app.schemas.device import DeviceSensorsUpdate  <-- Não precisamos mais desse schema antigo
+from app.schemas.device_sensor import DeviceSensorLinkCreate
 
 router = APIRouter()
 
@@ -125,48 +126,7 @@ async def delete_device(
     await session.commit()
     return {"ok": True}
 
-@router.post("/{device_id}/sensors", response_model=dict)
-async def update_device_sensors(
-    device_id: int,
-    payload: DeviceSensorsUpdate,
-    session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(deps.get_current_active_superuser)
-):
-    """
-    Atualiza a lista de sensores vinculados a um dispositivo.
-    (Substitui a lista atual pela nova).
-    """
-    device = await session.get(Device, device_id)
-    if not device:
-        raise HTTPException(status_code=404, detail="Dispositivo não encontrado")
-
-    current_links_query = select(DeviceSensorLink.sensor_type_id).where(
-        DeviceSensorLink.device_id == device_id
-    )
-    result = await session.exec(current_links_query)
-    current_ids = set(result.all())
-    
-    new_ids = set(payload.sensor_ids)
-
-    to_add = new_ids - current_ids
-    to_remove = current_ids - new_ids
-
-    for sensor_id in to_add:
-        link = DeviceSensorLink(device_id=device_id, sensor_type_id=sensor_id)
-        session.add(link)
-
-    if to_remove:
-        stmt = select(DeviceSensorLink).where(
-            DeviceSensorLink.device_id == device_id,
-            DeviceSensorLink.sensor_type_id.in_(to_remove)
-        )
-        results = await session.exec(stmt)
-        for link in results:
-            await session.delete(link)
-
-    await session.commit()
-    
-    return {"status": "ok", "added": len(to_add), "removed": len(to_remove)}
+# --- REMOVIDA AQUI A VERSÃO ANTIGA DO update_device_sensors ---
 
 @router.get("/{device_id}/sensors", response_model=List[int])
 async def get_device_sensors(
@@ -274,5 +234,38 @@ async def restore_device(
     db_device.is_active = True
     
     session.add(db_device)
+    await session.commit()
+    return {"ok": True}
+
+# --- VERSÃO CORRETA E ATUALIZADA (MANTIDA) ---
+@router.post("/{device_id}/sensors")
+async def update_device_sensors(
+    device_id: int,
+    sensor_links: List[DeviceSensorLinkCreate], 
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(deps.get_current_active_superuser),
+):
+    """
+    Atualiza a lista de sensores do dispositivo.
+    Remove os vínculos anteriores e cria novos (com fórmulas opcionais).
+    """
+    # 1. Verifica se o dispositivo existe
+    device = await session.get(Device, device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Dispositivo não encontrado")
+
+    # 2. Limpeza: Remove TODOS os vínculos atuais deste dispositivo
+    stmt = delete(DeviceSensorLink).where(DeviceSensorLink.device_id == device_id)
+    await session.exec(stmt)
+    
+    # 3. Cria novos vínculos com fórmulas
+    for link_in in sensor_links:
+        db_link = DeviceSensorLink(
+            device_id=device_id,
+            sensor_type_id=link_in.sensor_type_id,
+            calibration_formula=link_in.calibration_formula
+        )
+        session.add(db_link)
+    
     await session.commit()
     return {"ok": True}
