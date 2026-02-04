@@ -6,6 +6,7 @@ class SensorTypeCreate(BaseModel):
     name: str   # Ex: "Temperatura"
     unit: str   # Ex: "°C"
     description: Optional[str] = None
+    code: str
 
 # O que a API devolve
 class SensorTypePublic(SensorTypeCreate):

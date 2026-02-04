@@ -16,6 +16,7 @@ class SensorType(SQLModel, table=True):
     description: Optional[str] = None
     is_active: bool = Field(default=True)
     deleted_at: Optional[datetime] = Field(default=None)
+    code: str = Field(index=True, unique=True, description="Identificador único para uso em código (ex: temp_c)")
 
     devices: List["Device"] = Relationship(
         back_populates="sensors", 

@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.api.v1.api import api_router
 from app.core.database import init_db
@@ -40,6 +41,21 @@ app = FastAPI(
 )
 
 app.add_middleware(DeviceAuthMiddleware)
+
+# --- CONFIGURAÇÃO DE CORS ---
+origins = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:5173",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],   # Permite GET, POST, PUT, DELETE, etc.
+    allow_headers=["*"],   # Permite Authorization, Content-Type, etc.
+)
 
 @app.get("/")
 async def root():

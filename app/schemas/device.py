@@ -16,6 +16,7 @@ class DevicePublic(DeviceCreate):
     id: int
     is_active: bool
     sensors: List[SensorTypePublic] = []
+    organization_id: Optional[int] = None
 
 class DeviceUpdate(BaseModel):
     name: Optional[str] = None

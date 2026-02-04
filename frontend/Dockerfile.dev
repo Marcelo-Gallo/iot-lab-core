@@ -1,0 +1,18 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copia arquivos de dependência
+COPY package.json package-lock.json* ./
+
+# Instala dependências DENTRO do container (onde o Node é v20)
+RUN npm install
+
+# Copia o código fonte
+COPY . .
+
+# Expõe a porta
+EXPOSE 5173
+
+# Roda o servidor permitindo acesso externo (--host)
+CMD ["npm", "run", "dev", "--", "--host"]

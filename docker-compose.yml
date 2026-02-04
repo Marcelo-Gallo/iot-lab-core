@@ -28,6 +28,22 @@ services:
       db:
         condition: service_healthy
     
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8000/api/v1
+    depends_on:
+      - backend
+
+
   dashboard:
     build: .  # Usa a mesma imagem Python
     command: ["streamlit", "run", "app/dashboard/main.py", "--server.port", "8501", "--server.address", "0.0.0.0"]
