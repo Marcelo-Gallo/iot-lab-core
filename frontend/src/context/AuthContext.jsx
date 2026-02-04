@@ -8,50 +8,72 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Ao recarregar a página, verifica se já existe token salvo
+    const interceptorId = api.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        if (error.response?.status === 401) {
+          logout();
+        }
+        return Promise.reject(error);
+      }
+    );
+
+    return () => {
+      api.interceptors.response.eject(interceptorId);
+    };
+  }, []);
+
+  const fetchUserMe = async () => {
+    try {
+      const response = await api.get("/login/me");
+      setUser(response.data);
+    } catch (error) {
+      logout();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     const recoveredToken = localStorage.getItem("@IoTLab:token");
 
     if (recoveredToken) {
       api.defaults.headers.Authorization = `Bearer ${recoveredToken}`;
-      // Opcional: Aqui você poderia bater num endpoint /me para validar o token
-      setUser({ token: recoveredToken }); 
+      fetchUserMe();
+    } else {
+      setLoading(false);
     }
-
-    setLoading(false);
   }, []);
 
   const login = async (username, password) => {
-    // FastAPI espera Form Data
     const formData = new URLSearchParams();
-    formData.append("username", username); // O campo DEVE ser 'username', mesmo que seja email
+    formData.append("username", username);
     formData.append("password", password);
 
     try {
       const response = await api.post("/login/access-token", formData, {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded' // Forçando explicitamente
-        }
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
       });
 
       const { access_token } = response.data;
 
       localStorage.setItem("@IoTLab:token", access_token);
       api.defaults.headers.Authorization = `Bearer ${access_token}`;
-      setUser({ token: access_token, username });
+      
+      await fetchUserMe();
       
       return { success: true };
     } catch (error) {
-      console.error("Erro detalhado do Login:", error.response?.data);
       return { 
         success: false, 
-        message: error.response?.data?.detail || "Falha na comunicação com o servidor" 
+        message: error.response?.data?.detail || "Falha na comunicação" 
       };
     }
   };
 
   const logout = () => {
     localStorage.removeItem("@IoTLab:token");
-    api.defaults.headers.Authorization = null;
+    api.defaults.headers.Authorization = undefined;
     setUser(null);
   };
 
