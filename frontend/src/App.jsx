@@ -7,6 +7,7 @@ import DeviceDetails from './pages/DeviceDetails';
 // Importação das Páginas Principais
 import Dashboard from './pages/Dashboard';
 import SensorTypesPage from './pages/SensorTypesPage';
+import AdminDashboard from './pages/AdminDashboard'; // <--- IMPORT DA NOVA PÁGINA
 
 // Componente Wrapper para Rotas Privadas
 const PrivateRoute = ({ children }) => {
@@ -23,6 +24,19 @@ const PrivateRoute = ({ children }) => {
   if (!authenticated) {
     return <Navigate to="/login" />;
   }
+
+  return children;
+};
+
+// NOVO: Componente Wrapper para Rotas de Admin
+const AdminRoute = ({ children }) => {
+  const { authenticated, user, loading } = useContext(AuthContext);
+
+  if (loading) return <div>Carregando...</div>;
+  if (!authenticated) return <Navigate to="/login" />;
+  
+  // Bloqueio de Nível de Acesso
+  if (!user?.is_superuser) return <Navigate to="/" />;
 
   return children;
 };
@@ -57,11 +71,19 @@ const DashboardLayout = ({ children }) => {
                         Dashboard
                     </Link>
                     
-                    {/* Link Sensores (NOVO) */}
+                    {/* Link Sensores */}
                     <Link to="/sensors" className={getLinkClass('/sensors')}>
                         <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
                         Tipos de Sensores
                     </Link>
+
+                    {/* Link ADMIN (Só aparece para Superuser) */}
+                    {user?.is_superuser && (
+                        <Link to="/admin" className={getLinkClass('/admin')}>
+                            <svg className="w-5 h-5 mr-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
+                            Gestão de Labs
+                        </Link>
+                    )}
 
                     {/* Link Configurações (Placeholder) */}
                     <a href="#" className="flex items-center px-4 py-3 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors">
@@ -83,7 +105,8 @@ const DashboardLayout = ({ children }) => {
                 <header className="h-16 bg-white shadow-sm flex items-center justify-between px-6 z-10">
                     <h1 className="text-xl font-bold text-gray-800">
                         {/* Título Dinâmico baseado na rota */}
-                        {location.pathname === '/sensors' ? 'Gestão de Sensores' : 'Visão Geral'}
+                        {location.pathname === '/sensors' ? 'Gestão de Sensores' : 
+                         location.pathname === '/admin' ? 'Administração Global' : 'Visão Geral'}
                     </h1>
                     <div className="flex items-center space-x-4">
                         <span className="text-sm text-gray-600">
@@ -128,8 +151,17 @@ function App() {
               </DashboardLayout>
             </PrivateRoute>
           } />
+
+          {/* Rota de ADMIN (NOVA) */}
+          <Route path="/admin" element={
+            <AdminRoute>
+              <DashboardLayout>
+                 <AdminDashboard />
+              </DashboardLayout>
+            </AdminRoute>
+          } />
           
-          {/* Detalhes (Sem Layout ou Com? Geralmente Com) */}
+          {/* Detalhes */}
           <Route path="/devices/:id" element={
             <PrivateRoute>
                <DashboardLayout>
