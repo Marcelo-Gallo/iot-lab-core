@@ -3,46 +3,97 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { deviceService } from '../services/deviceService';
 import { measurementService } from '../services/measurementService'; 
 import LiveChart from '../components/LiveChart'; 
-import AddSensorModal from '../components/AddSensorModal'; // <--- IMPORTADO
+import AddSensorModal from '../components/AddSensorModal';
+
+const aggregateData = (data, intervalMinutes) => {
+    if (!data || data.length === 0) return [];
+
+    const groups = {};
+
+    data.forEach(item => {
+        const date = new Date(item.created_at);
+        const coeff = 1000 * 60 * intervalMinutes;
+        const roundedTime = new Date(Math.floor(date.getTime() / coeff) * coeff).toISOString();
+
+        const key = `${roundedTime}_${item.sensor_type_id}`;
+
+        if (!groups[key]) {
+            groups[key] = { 
+                ...item, 
+                created_at: roundedTime, 
+                sum: 0, 
+                count: 0 
+            };
+        }
+        
+        groups[key].sum += Number(item.value);
+        groups[key].count += 1;
+    });
+
+    return Object.values(groups).map(group => ({
+        ...group,
+        value: group.sum / group.count, 
+        original_count: group.count 
+    })).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+};
 
 export default function DeviceDetails() {
     const { id } = useParams();
     const navigate = useNavigate();
 
-    // --- Estados ---
     const [device, setDevice] = useState(null);
     const [tokens, setTokens] = useState([]);
     const [loading, setLoading] = useState(true);
     const [measurements, setMeasurements] = useState([]);
-    const [timeRange, setTimeRange] = useState('realtime');
+    const [timeRange, setTimeRange] = useState('realtime'); 
     
-    // UI
     const [newTokenLabel, setNewTokenLabel] = useState('');
-    const [isSensorModalOpen, setIsSensorModalOpen] = useState(false); // Modal state
+    const [isSensorModalOpen, setIsSensorModalOpen] = useState(false);
 
-    // --- Polling de Telemetria ---
     const fetchTelemetry = useCallback(async () => {
         try {
-            let params = { limit: 100 };
+            let limit = 100; 
+            if (timeRange === '1h') limit = 1000;
+            if (timeRange === '24h') limit = 5000;  
+            if (timeRange === '7d') limit = 20000;  
+
+            const params = { limit: limit };
+            const data = await measurementService.getByDevice(id, params);
+            
+            const sortedData = data.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+            const now = new Date();
+            let filteredData = sortedData;
+            let processedData = [];
+
             if (timeRange !== 'realtime') {
-                const now = new Date();
-                let past = new Date();
+                const past = new Date();
+                
                 if (timeRange === '1h') past.setHours(now.getHours() - 1);
                 if (timeRange === '24h') past.setHours(now.getHours() - 24);
                 if (timeRange === '7d') past.setDate(now.getDate() - 7);
-                params.startDate = past;
-                params.limit = 1000; 
+
+                filteredData = sortedData.filter(item => new Date(item.created_at) >= past);
+
+                if (timeRange === '24h') {
+                    processedData = aggregateData(filteredData, 15);
+                } else if (timeRange === '7d') {
+                    processedData = aggregateData(filteredData, 60);
+                } else {
+                    processedData = filteredData;
+                }
+
+            } else {
+                processedData = sortedData.slice(-50);
             }
-            const data = await measurementService.getByDevice(id, params);
-            const sortedData = data.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-            setMeasurements(sortedData);
+
+            setMeasurements(processedData);
         } catch (error) {
-            console.error("Erro no polling:", error);
+            console.error(error);
         }
     }, [id, timeRange]);
 
-    // --- Carga Inicial ---
-    const loadData = useCallback(async () => {
+    const loadDeviceData = useCallback(async () => {
         try {
             const [deviceData, tokenData] = await Promise.all([
                 deviceService.getById(id),
@@ -50,28 +101,23 @@ export default function DeviceDetails() {
             ]);
             setDevice(deviceData);
             setTokens(tokenData);
-            await fetchTelemetry();
         } catch (error) {
-            console.error("Erro ao carregar:", error);
             alert("Erro ao carregar detalhes.");
         } finally {
             setLoading(false);
         }
-    }, [id, fetchTelemetry]);
+    }, [id]);
 
     useEffect(() => {
-        loadData();
-    }, [loadData]);
+        loadDeviceData();
+    }, [loadDeviceData]);
 
-    // Polling Effect
     useEffect(() => {
-        if (timeRange === 'realtime') {
-            const interval = setInterval(fetchTelemetry, 5000);
-            return () => clearInterval(interval);
-        }
+        fetchTelemetry();
+        const interval = setInterval(fetchTelemetry, 5000);
+        return () => clearInterval(interval);
     }, [fetchTelemetry, timeRange]);
 
-    // --- Handlers ---
     const handleGenerateToken = async (e) => {
         e.preventDefault();
         if (!newTokenLabel) return;
@@ -85,51 +131,30 @@ export default function DeviceDetails() {
         }
     };
 
-    // Adicionar Sensor via Modal (com fórmula)
     const handleAddSensor = async (sensorData) => {
         try {
-            // Pega os sensores atuais e adiciona o novo
-            // Nota: O backend apaga e recria, então precisamos mandar TUDO o que queremos manter + o novo
             const currentSensors = device.sensors || [];
-            
-            // Verifica se já existe para evitar duplicação
             if (currentSensors.find(s => s.id === sensorData.sensor_type_id)) {
-                alert("Este sensor já está vinculado. Para editar a fórmula, remova e adicione novamente.");
+                alert("Este sensor já está vinculado.");
                 return;
             }
-
-            // Monta o payload misturando os existentes (IDs) com o novo (Objeto)
-            const payload = [
-                ...currentSensors.map(s => s.id), // Mantém os antigos
-                sensorData // Adiciona o novo { sensor_type_id, calibration_formula }
-            ];
-
+            const payload = [...currentSensors.map(s => s.id), sensorData];
             await deviceService.updateSensors(id, payload);
-            
-            // Recarrega os dados para atualizar a lista
-            const updatedDevice = await deviceService.getById(id);
-            setDevice(updatedDevice);
+            await loadDeviceData();
+            setIsSensorModalOpen(false);
             alert("Sensor vinculado com sucesso!");
         } catch (error) {
-            alert("Erro ao vincular sensor: " + error.response?.data?.detail || error.message);
+            alert("Erro ao vincular sensor.");
         }
     };
 
-    // Remover Sensor
     const handleRemoveSensor = async (sensorId) => {
         if (!window.confirm("Remover este sensor do dispositivo?")) return;
         try {
             const currentSensors = device.sensors || [];
-            // Filtra removendo o ID selecionado
-            const payload = currentSensors
-                .filter(s => s.id !== sensorId)
-                .map(s => s.id);
-
+            const payload = currentSensors.filter(s => s.id !== sensorId).map(s => s.id);
             await deviceService.updateSensors(id, payload);
-            
-            // Atualiza UI
-            const updatedDevice = await deviceService.getById(id);
-            setDevice(updatedDevice);
+            await loadDeviceData();
         } catch (error) {
             alert("Erro ao remover sensor.");
         }
@@ -140,7 +165,6 @@ export default function DeviceDetails() {
 
     return (
         <div className="p-6 max-w-6xl mx-auto space-y-8 animate-fade-in">
-            {/* Cabeçalho */}
             <div className="flex items-center justify-between border-b border-gray-100 pb-6">
                 <div className="flex items-center">
                     <button onClick={() => navigate('/')} className="mr-4 p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-500">
@@ -156,7 +180,6 @@ export default function DeviceDetails() {
                 </span>
             </div>
 
-            {/* Gráfico */}
             <div className="bg-white p-1 rounded-xl">
                  <div className="flex justify-end space-x-2 mb-2">
                     {['realtime', '1h', '24h', '7d'].map((range) => (
@@ -165,12 +188,20 @@ export default function DeviceDetails() {
                         </button>
                     ))}
                 </div>
-                <LiveChart data={measurements} />
+                <div className="h-80 w-full relative">
+                    <div className="absolute top-2 left-2 z-10 flex items-center gap-2 pointer-events-none opacity-50 hover:opacity-100 transition-opacity">
+                         <span className={`w-2 h-2 rounded-full ${measurements.length > 0 ? 'bg-green-500 animate-pulse' : 'bg-gray-300'}`}></span>
+                         <span className="text-[10px] text-gray-400 font-mono">
+                            {measurements.length} pts 
+                            {(timeRange === '24h' || timeRange === '7d') && ' (Médias)'}
+                         </span>
+                    </div>
+                    <LiveChart data={measurements} />
+                </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 
-                {/* Card Sensores (Atualizado) */}
                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
                     <div className="flex justify-between items-center mb-4">
                         <h2 className="text-xl font-bold text-gray-800 flex items-center">
@@ -195,7 +226,6 @@ export default function DeviceDetails() {
                                         <p className="font-bold text-gray-700 text-sm">{sensor.name}</p>
                                         <p className="text-xs text-gray-500 font-mono">
                                             {sensor.unit} 
-                                            {/* Aqui futuramente podemos mostrar a fórmula se o backend retornar no GET */}
                                         </p>
                                     </div>
                                     <button 
@@ -211,7 +241,6 @@ export default function DeviceDetails() {
                     </div>
                 </div>
 
-                {/* Card Tokens */}
                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
                     <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center">
                         <svg className="w-5 h-5 mr-2 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" /></svg>
@@ -236,7 +265,6 @@ export default function DeviceDetails() {
                 </div>
             </div>
 
-            {/* Modal de Sensores */}
             <AddSensorModal 
                 isOpen={isSensorModalOpen} 
                 onClose={() => setIsSensorModalOpen(false)} 
