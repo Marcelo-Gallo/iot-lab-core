@@ -1,33 +1,30 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '../context/AuthContext'; // <--- Hook para pegar User e Token
+import { useAuth } from '../context/AuthContext'; 
 import { deviceService } from '../services/deviceService';
 import DeviceTable from '../components/DeviceTable';
 import CreateDeviceModal from '../components/CreateDeviceModal';
-import LiveChart from '../components/LiveChart'; // <--- Import do Gráfico
+import LiveChart from '../components/LiveChart'; 
 
 export default function Dashboard() {
-    const { user, token } = useAuth(); // <--- Recupera o token para o WebSocket
+    const { user, token } = useAuth(); 
     
     const [devices, setDevices] = useState([]);
-    const [measurements, setMeasurements] = useState([]); // <--- Estado para dados Real-time
+    const [measurements, setMeasurements] = useState([]); 
     const [stats, setStats] = useState({ total: 0, active: 0 });
     const [loadingData, setLoadingData] = useState(true);
     const [wsStatus, setWsStatus] = useState('disconnected');
     const [isModalOpen, setIsModalOpen] = useState(false);
 
-    // 1. Efeito para carregar dados iniciais (HTTP)
     useEffect(() => {
         loadData();
     }, []);
 
-    // 2. Efeito para Gerenciar o Ciclo de Vida do WebSocket
     useEffect(() => {
         if (!token) return;
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const host = window.location.hostname === 'localhost' ? 'localhost:8000' : window.location.host;
         
-        // Conexão Segura: Passamos o token na Query String conforme implementado no backend
         const wsUrl = `${protocol}//${host}/api/v1/measurements/ws?token=${token}`;
         const ws = new WebSocket(wsUrl);
 
@@ -40,11 +37,10 @@ export default function Dashboard() {
             try {
                 const newData = JSON.parse(event.data);
                 
-                // Isolamento Vertical no Client: O servidor já filtra, mas confirmamos o ID da Org
                 if (newData.organization_id === user?.organization_id) {
                     setMeasurements((prev) => {
-                        const updated = [newData, ...prev];
-                        return updated.slice(0, 50); // Mantém buffer de 50 pontos
+                        const updated = [...prev, newData];
+                        return updated.slice(-50);
                     });
                 }
             } catch (err) {
@@ -55,7 +51,7 @@ export default function Dashboard() {
         ws.onclose = () => setWsStatus('disconnected');
         ws.onerror = () => setWsStatus('error');
 
-        return () => ws.close(); // Cleanup ao sair da tela
+        return () => ws.close(); 
     }, [token, user?.organization_id]);
 
     const loadData = async () => {
@@ -105,7 +101,6 @@ export default function Dashboard() {
 
     return (
         <div className="p-6 bg-gray-50 min-h-screen">
-            {/* Cards de KPIs */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
                 <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
                     <h3 className="text-gray-500 text-sm font-medium uppercase">Dispositivos Totais</h3>
@@ -124,7 +119,6 @@ export default function Dashboard() {
                 </div>
             </div>
 
-            {/* Gráfico Realtime */}
             <div className="mb-10">
                 <LiveChart data={measurements} />
             </div>
